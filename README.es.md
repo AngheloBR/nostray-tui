@@ -8,7 +8,7 @@ Una app de terminal para mantener el enfoque en lo que estés haciendo: programa
 practicar inglés, leer… Sesiones tipo, categorías, meta diaria, racha y un heatmap de
 actividad al estilo GitHub. Sin cuentas, sin red, sin servicios.
 
-[![crates.io](https://img.shields.io/crates/v/nostray-tui?logo=rust&color=a78bfa)](https://crates.io/crates/nostray-tui)
+[![crates.io](https://img.shields.io/crates/v/nostray-tui?logo=rust&color=a78bfa&label=crates.io)](https://crates.io/crates/nostray-tui)
 [![CI](https://github.com/AngheloBR/nostray-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/AngheloBR/nostray-tui/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-22d3ee)](#licencia)
 
