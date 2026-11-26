@@ -11,7 +11,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::layout::PanelId;
 use crate::{
     clock::Clock,
-    model::{Config, CycleRecord, History, TaskList},
+    model::{Config, CycleRecord, History, State, TaskList},
     notify::{Notifier, NotifyError},
     session::{BREAK_MIN, CYCLES, Custom, Durations, FOCUS_MIN, LONG_BREAK_MIN, SessionKind},
     store::{self, Loaded, Paths},
@@ -84,6 +84,8 @@ pub struct App {
     pub history: History,
     pub tasks: TaskList,
     pub config: Config,
+    /// Última sesión/categoría elegidas (se guarda en `state.json` al cambiar).
+    pub state: State,
     pub session: SessionKind,
     pub timer: Timer,
     pub category: usize,
@@ -114,6 +116,7 @@ impl App {
         start: Option<SessionKind>,
         category: Option<usize>,
     ) -> Self {
+        let explicit = start.is_some() || category.is_some();
         // Sin elección explícita (CLI), se retoma la última de `state.json`.
         let session = start
             .or_else(|| loaded.state.session())
@@ -132,6 +135,7 @@ impl App {
             history: loaded.history,
             tasks: loaded.tasks,
             config: loaded.config,
+            state: loaded.state,
             session,
             timer: Timer::new(durations),
             category,
@@ -156,7 +160,29 @@ impl App {
         for n in loaded.notices {
             app.say(n, Level::Warn);
         }
+        // Lo elegido por CLI también se recuerda para la próxima vez.
+        if explicit {
+            app.remember();
+        }
         app
+    }
+
+    /// Guarda la sesión y categoría actuales en `state.json` (solo si cambiaron).
+    fn remember(&mut self) {
+        let next = State {
+            last_session: Some(self.session.id().to_owned()),
+            last_category: self.config.categories.get(self.category).cloned(),
+            ..State::default()
+        };
+        if next == self.state {
+            return;
+        }
+        self.state = next;
+        if let Some(p) = &self.paths
+            && let Err(e) = store::save_json(&p.state(), &self.state)
+        {
+            self.say(format!("no se pudo guardar: {e}"), Level::Err);
+        }
     }
 
     pub fn category_name(&self) -> &str {
@@ -423,6 +449,7 @@ impl App {
     fn apply_session(&mut self, kind: SessionKind) {
         self.session = kind;
         self.timer.set_durations(durations_of(kind, &self.config));
+        self.remember();
         self.say(format!("sesión {}", kind.label()), Level::Info);
     }
 
@@ -575,6 +602,7 @@ impl App {
                         let i = usize::from(c as u8 - b'1');
                         if i < n {
                             self.category = i;
+                            self.remember();
                             None
                         } else {
                             Some(Modal::Categories(idx))
@@ -582,6 +610,7 @@ impl App {
                     }
                     KeyCode::Enter => {
                         self.category = idx % n;
+                        self.remember();
                         None
                     }
                     KeyCode::Esc | KeyCode::Char('q') => None,
@@ -709,7 +738,7 @@ pub mod tests_support {
     use std::rc::Rc;
 
     use super::*;
-    use crate::{clock::FakeClock, model::State, notify::Recorder};
+    use crate::{clock::FakeClock, notify::Recorder};
 
     pub fn key(c: KeyCode) -> KeyEvent {
         KeyEvent {
@@ -782,6 +811,27 @@ pub mod tests_support {
         let a = app_with(Some(SessionKind::Flow), loaded()).0;
         assert_eq!(a.session, SessionKind::Flow);
         assert_eq!(a.category_name(), "Leer");
+    }
+
+    #[test]
+    fn recuerda_sesion_y_categoria_al_elegirlas() {
+        let mut a = app(None);
+        assert_eq!(
+            a.state,
+            State::default(),
+            "abrir sin elegir no recuerda nada"
+        );
+        a.on_key(key(KeyCode::Down));
+        a.on_key(key(KeyCode::Down));
+        a.on_key(key(KeyCode::Enter));
+        assert_eq!(a.state.last_session.as_deref(), Some("flow"));
+        a.on_key(key(KeyCode::Char('c')));
+        a.on_key(key(KeyCode::Char('3')));
+        assert_eq!(a.state.last_category.as_deref(), Some("Inglés"));
+
+        let b = app(Some(SessionKind::Deep));
+        assert_eq!(b.state.last_session.as_deref(), Some("deep"));
+        assert_eq!(b.state.last_category.as_deref(), Some("Programar"));
     }
 
     #[test]
