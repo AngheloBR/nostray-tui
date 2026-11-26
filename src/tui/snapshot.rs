@@ -682,7 +682,7 @@ mod docs {
             None,
             demo_loaded(today),
             start,
-            0,
+            None,
         );
         (app, clock)
     }

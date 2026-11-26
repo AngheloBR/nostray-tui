@@ -44,7 +44,7 @@ pub fn run(
     paths: Paths,
     loaded: Loaded,
     start: Option<SessionKind>,
-    category: usize,
+    category: Option<usize>,
 ) -> anyhow::Result<()> {
     let stop = Arc::new(AtomicBool::new(false));
     for sig in [

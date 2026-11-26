@@ -1,6 +1,6 @@
 //! Persistencia: rutas XDG, carga tolerante a corrupción y escritura atómica.
 //!
-//! - Datos: `$XDG_DATA_HOME/<APP_NAME>/{history,tasks}.json`
+//! - Datos: `$XDG_DATA_HOME/<APP_NAME>/{history,tasks,state}.json`
 //! - Config: `$XDG_CONFIG_HOME/<APP_NAME>/config.toml`
 //! - Un archivo ilegible NO se borra: se renombra a `.bak` (o `.bak.N`) y se arranca limpio.
 //! - Bloqueo: `$XDG_DATA_HOME/<APP_NAME>/<APP_NAME>.lock` con el PID de la instancia abierta.
@@ -17,7 +17,7 @@ use thiserror::Error;
 
 use crate::{
     APP_NAME,
-    model::{Config, FORMAT_VERSION, History, TaskList, default_config_toml},
+    model::{Config, FORMAT_VERSION, History, State, TaskList, default_config_toml},
 };
 
 #[derive(Debug, Error)]
@@ -69,6 +69,10 @@ impl Paths {
 
     pub fn config(&self) -> PathBuf {
         self.config.join("config.toml")
+    }
+
+    pub fn state(&self) -> PathBuf {
+        self.data.join("state.json")
     }
 
     pub fn lock(&self) -> PathBuf {
@@ -156,6 +160,7 @@ pub struct Loaded {
     pub history: History,
     pub tasks: TaskList,
     pub config: Config,
+    pub state: State,
     pub notices: Vec<String>,
 }
 
@@ -173,10 +178,12 @@ pub fn load_all(paths: &Paths, mode: Mode) -> Result<Loaded, StoreError> {
     let history = load_json::<History>(&paths.history(), |h| h.version, mode, &mut notices)?;
     let tasks = load_json::<TaskList>(&paths.tasks(), |t| t.version, mode, &mut notices)?;
     let config = load_config(&paths.config(), mode, &mut notices)?;
+    let state = load_json::<State>(&paths.state(), |s| s.version, mode, &mut notices)?;
     Ok(Loaded {
         history,
         tasks,
         config,
+        state,
         notices,
     })
 }
@@ -399,6 +406,7 @@ mod tests {
         assert_eq!(p.history(), Path::new("/d/x/history.json"));
         assert_eq!(p.tasks(), Path::new("/d/x/tasks.json"));
         assert_eq!(p.config(), Path::new("/c/x/config.toml"));
+        assert_eq!(p.state(), Path::new("/d/x/state.json"));
         if let Ok(real) = Paths::from_env() {
             assert!(real.history().ends_with(format!("{APP_NAME}/history.json")));
             assert!(real.config().ends_with(format!("{APP_NAME}/config.toml")));
@@ -652,5 +660,24 @@ mod tests {
             InstanceLock::acquire(&p),
             Err(StoreError::Locked { pid: 1 })
         ));
+    }
+
+    #[test]
+    fn state_ida_y_vuelta_y_corrupto() {
+        let t = TestDir::new("state");
+        let p = paths(&t);
+        let st = State {
+            last_session: Some("deep".into()),
+            last_category: Some("Leer".into()),
+            ..State::default()
+        };
+        assert!(save_json(&p.state(), &st).is_ok());
+        let l = load_all(&p, Mode::ReadWrite);
+        assert_eq!(l.ok().map(|l| l.state), Some(st));
+
+        let _ = fs::write(p.state(), "{ roto");
+        let l = load_all(&p, Mode::ReadWrite);
+        assert_eq!(l.ok().map(|l| l.state), Some(State::default()));
+        assert!(with_suffix(&p.state(), ".bak").exists());
     }
 }

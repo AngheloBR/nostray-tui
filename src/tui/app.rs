@@ -112,9 +112,15 @@ impl App {
         paths: Option<Paths>,
         loaded: Loaded,
         start: Option<SessionKind>,
-        category: usize,
+        category: Option<usize>,
     ) -> Self {
-        let session = start.unwrap_or(SessionKind::Clasico);
+        // Sin elección explícita (CLI), se retoma la última de `state.json`.
+        let session = start
+            .or_else(|| loaded.state.session())
+            .unwrap_or(SessionKind::Clasico);
+        let category = category
+            .or_else(|| loaded.state.category_in(&loaded.config.categories))
+            .unwrap_or(0);
         let durations = durations_of(session, &loaded.config);
         let now = clock.mono();
         let today = clock.today();
@@ -134,8 +140,11 @@ impl App {
             task_sel: 0,
             log_scroll: 0,
             recent: vec![PanelId::Timer],
-            modal: start.is_none().then_some(Modal::Sessions {
-                idx: 0,
+            modal: start.is_none().then(|| Modal::Sessions {
+                idx: SessionKind::ALL
+                    .iter()
+                    .position(|k| *k == session)
+                    .unwrap_or(0),
                 initial: true,
             }),
             toasts: VecDeque::new(),
@@ -700,7 +709,7 @@ pub mod tests_support {
     use std::rc::Rc;
 
     use super::*;
-    use crate::{clock::FakeClock, notify::Recorder};
+    use crate::{clock::FakeClock, model::State, notify::Recorder};
 
     pub fn key(c: KeyCode) -> KeyEvent {
         KeyEvent {
@@ -729,7 +738,7 @@ pub mod tests_support {
             None,
             loaded,
             start,
-            0,
+            None,
         );
         (app, clock, rec)
     }
@@ -739,12 +748,40 @@ pub mod tests_support {
             history: History::default(),
             tasks: TaskList::default(),
             config: Config::default(),
+            state: State::default(),
             notices: vec![],
         }
     }
 
     fn app(start: Option<SessionKind>) -> App {
         app_with(start, empty()).0
+    }
+
+    #[test]
+    fn retoma_ultima_sesion_y_categoria() {
+        let loaded = || {
+            let mut l = empty();
+            l.state = State {
+                last_session: Some("deep".into()),
+                last_category: Some("Leer".into()),
+                ..State::default()
+            };
+            l
+        };
+        let a = app_with(None, loaded()).0;
+        assert_eq!(a.session, SessionKind::Deep);
+        assert_eq!(a.category_name(), "Leer");
+        assert!(matches!(
+            a.modal,
+            Some(Modal::Sessions {
+                idx: 1,
+                initial: true
+            })
+        ));
+        // Lo explícito (CLI) manda sobre lo recordado.
+        let a = app_with(Some(SessionKind::Flow), loaded()).0;
+        assert_eq!(a.session, SessionKind::Flow);
+        assert_eq!(a.category_name(), "Leer");
     }
 
     #[test]

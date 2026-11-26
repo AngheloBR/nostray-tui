@@ -50,9 +50,9 @@ fn main() -> anyhow::Result<ExitCode> {
         }
         Some(Cmd::Start { session, tag }) => {
             let category = match tag {
-                None => 0,
+                None => None,
                 Some(t) => match cli::find_category(&loaded.config.categories, &t) {
-                    Some(i) => i,
+                    Some(i) => Some(i),
                     None => {
                         eprintln!(
                             "{APP_NAME}: categoría «{t}» desconocida. Válidas: {}",
@@ -68,7 +68,7 @@ fn main() -> anyhow::Result<ExitCode> {
         }
         None => {
             require_tty()?;
-            tui::run(paths, loaded, None, 0)?;
+            tui::run(paths, loaded, None, None)?;
             Ok(ExitCode::SUCCESS)
         }
     }

@@ -181,6 +181,41 @@ impl Default for TaskList {
     }
 }
 
+// ── Estado entre sesiones ───────────────────────────────────────────────────
+
+/// Última elección del usuario, para retomarla al abrir (`state.json`).
+/// Se guarda por id/nombre, no por índice: sobrevive a reordenar categorías.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct State {
+    pub version: u32,
+    pub last_session: Option<String>,
+    pub last_category: Option<String>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            version: FORMAT_VERSION,
+            last_session: None,
+            last_category: None,
+        }
+    }
+}
+
+impl State {
+    pub fn session(&self) -> Option<SessionKind> {
+        self.last_session.as_deref().and_then(SessionKind::from_id)
+    }
+
+    /// Índice de la última categoría en `categories` (sin distinguir mayúsculas).
+    pub fn category_in(&self, categories: &[String]) -> Option<usize> {
+        let last = self.last_category.as_deref()?;
+        categories
+            .iter()
+            .position(|c| c.to_lowercase() == last.to_lowercase())
+    }
+}
+
 // ── Configuración ───────────────────────────────────────────────────────────
 
 pub const DAILY_GOAL: (u32, u32) = (1, 24);
@@ -477,5 +512,26 @@ mod tests {
             json,
             r#"{"ended_at":"2026-03-14T15:25:00Z","local_date":"2026-03-14","phase":"focus","session":"clasico","category":"Programar","task_id":null,"task":null,"planned_secs":1500,"actual_secs":1500,"completed":true}"#
         );
+    }
+
+    #[test]
+    fn state_resuelve_sesion_y_categoria_por_nombre() {
+        let cats: Vec<String> = DEFAULT_CATEGORIES.iter().map(|c| (*c).to_owned()).collect();
+        let st = State {
+            last_session: Some("flow".into()),
+            last_category: Some("inglés".into()),
+            ..State::default()
+        };
+        assert_eq!(st.session(), Some(SessionKind::Flow));
+        assert_eq!(st.category_in(&cats), Some(2));
+
+        let viejo = State {
+            last_session: Some("inexistente".into()),
+            last_category: Some("Borrada".into()),
+            ..State::default()
+        };
+        assert_eq!(viejo.session(), None);
+        assert_eq!(viejo.category_in(&cats), None);
+        assert_eq!(State::default().category_in(&cats), None);
     }
 }
