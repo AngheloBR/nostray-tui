@@ -26,7 +26,7 @@ pub const APP_NAME: &str = "nostray";
 fn main() -> anyhow::Result<ExitCode> {
     let cli = Cli::parse();
     let paths = Paths::from_env()?;
-    let loaded = store::load_all(&paths, store::Mode::ReadWrite)?;
+    let loaded = store::load_all(&paths, load_mode(cli.command.as_ref()))?;
 
     match cli.command {
         Some(Cmd::Stats) => {
@@ -67,6 +67,14 @@ fn main() -> anyhow::Result<ExitCode> {
     }
 }
 
+/// `stats` solo consulta: no debe crear ni renombrar archivos del usuario.
+fn load_mode(cmd: Option<&Cmd>) -> store::Mode {
+    match cmd {
+        Some(Cmd::Stats) => store::Mode::ReadOnly,
+        _ => store::Mode::ReadWrite,
+    }
+}
+
 fn require_tty() -> anyhow::Result<()> {
     if !(std::io::stdin().is_terminal() && std::io::stdout().is_terminal()) {
         bail!("{APP_NAME} necesita una terminal interactiva (usa --help o `{APP_NAME} stats`)");
@@ -79,5 +87,12 @@ mod tests {
     #[test]
     fn app_name_coincide_con_binario() {
         assert_eq!(super::APP_NAME, env!("CARGO_BIN_NAME"));
+    }
+
+    #[test]
+    fn stats_carga_en_solo_lectura() {
+        use super::{Cmd, load_mode, store::Mode};
+        assert_eq!(load_mode(Some(&Cmd::Stats)), Mode::ReadOnly);
+        assert_eq!(load_mode(None), Mode::ReadWrite);
     }
 }
