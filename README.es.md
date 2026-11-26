@@ -205,16 +205,21 @@ nostray --help | --version
 
 ### Datos
 
-| Archivo                                | Contenido          |
-|----------------------------------------|--------------------|
-| `$XDG_DATA_HOME/nostray/history.json`  | historial de fases |
-| `$XDG_DATA_HOME/nostray/tasks.json`    | tareas             |
-| `$XDG_CONFIG_HOME/nostray/config.toml` | configuración      |
+| Archivo                                | Contenido                       |
+|----------------------------------------|---------------------------------|
+| `$XDG_DATA_HOME/nostray/history.json`  | historial de fases              |
+| `$XDG_DATA_HOME/nostray/tasks.json`    | tareas                          |
+| `$XDG_DATA_HOME/nostray/nostray.lock`  | PID de la TUI abierta (bloqueo) |
+| `$XDG_CONFIG_HOME/nostray/config.toml` | configuración                   |
 
 Si no están definidas las variables XDG, se usan `~/.local/share/nostray/` y
 `~/.config/nostray/`. Si `config.toml` no existe, se crea con valores por defecto y
 comentarios. Un valor fuera de rango se sustituye por el de por defecto solo en memoria (con
 aviso); el archivo no se toca.
+
+Solo puede haber una TUI abierta a la vez: una segunda instancia sale con un error que indica el
+PID de la primera. Si la anterior murió sin limpiar (p. ej. `kill -9`), el bloqueo se detecta
+como huérfano y se recupera solo. `nostray stats` no toma el bloqueo y no modifica ningún archivo.
 
 `config.toml` por defecto:
 
@@ -252,7 +257,6 @@ coinciden). Los datos guardados con el nombre anterior no se migran.
 
 - El reloj monotónico no avanza mientras el equipo está suspendido: una fase en curso durante
   una suspensión termina más tarde.
-- Sin bloqueo entre instancias: si abres dos a la vez, la última que guarda gana.
 - Al salir con un ciclo a medias, el tiempo de esa fase no se guarda.
 - Cuando la TUI guarda la configuración (al editar la sesión Personalizado), `config.toml` se
   reescribe sin los comentarios.

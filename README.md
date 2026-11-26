@@ -187,7 +187,9 @@ with code 2.
 
 Data lives in `$XDG_DATA_HOME/nostray/` (`history.json`, `tasks.json`; default
 `~/.local/share/nostray/`) and `$XDG_CONFIG_HOME/nostray/config.toml` (default
-`~/.config/nostray/`). To try it without touching your data:
+`~/.config/nostray/`). Only one TUI runs at a time: `nostray.lock` in the data directory holds
+its PID, and a stale lock (e.g. after `kill -9`) is recovered automatically. `nostray stats`
+never takes the lock and never modifies any file. To try it without touching your data:
 
 ```sh
 XDG_DATA_HOME=/tmp/nostray-try/data XDG_CONFIG_HOME=/tmp/nostray-try/config nostray
@@ -198,9 +200,9 @@ To rename the program, change `APP_NAME` in `src/main.rs` and the `[[bin]]` name
 
 ## Limitations
 
-The monotonic clock doesn't advance while the machine is suspended. No locking between
-concurrent instances. Leaving mid-cycle discards that phase. Saving the config from the TUI
-drops the comments in `config.toml`. Developed and tested on Linux (Fedora, X11).
+The monotonic clock doesn't advance while the machine is suspended. Leaving mid-cycle discards
+that phase. Saving the config from the TUI drops the comments in `config.toml`. Developed and
+tested on Linux (Fedora, X11).
 
 ## Development
 
