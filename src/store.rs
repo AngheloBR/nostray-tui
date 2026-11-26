@@ -3,6 +3,7 @@
 //! - Datos: `$XDG_DATA_HOME/<APP_NAME>/{history,tasks}.json`
 //! - Config: `$XDG_CONFIG_HOME/<APP_NAME>/config.toml`
 //! - Un archivo ilegible NO se borra: se renombra a `.bak` (o `.bak.N`) y se arranca limpio.
+//! - Bloqueo: `$XDG_DATA_HOME/<APP_NAME>/<APP_NAME>.lock` con el PID de la instancia abierta.
 //! - En [`Mode::ReadOnly`] (p. ej. `stats`) nunca se crea, renombra ni escribe nada.
 
 use std::{
@@ -27,6 +28,8 @@ pub enum StoreError {
     Io { path: PathBuf, source: io::Error },
     #[error("{path}: no se pudo serializar: {msg}")]
     Encode { path: PathBuf, msg: String },
+    #[error("{APP_NAME} ya está abierto en otra terminal (PID {pid})")]
+    Locked { pid: u32 },
 }
 
 fn io_err(path: &Path) -> impl FnOnce(io::Error) -> StoreError + '_ {
@@ -67,6 +70,84 @@ impl Paths {
     pub fn config(&self) -> PathBuf {
         self.config.join("config.toml")
     }
+
+    pub fn lock(&self) -> PathBuf {
+        self.data.join(format!("{APP_NAME}.lock"))
+    }
+}
+
+/// Bloqueo de instancia única: el archivo existe mientras viva el valor.
+///
+/// Se crea con `create_new` (atómico) y guarda el PID. Si el PID ya no existe en `/proc`
+/// (la instancia anterior murió sin limpiar), el bloqueo se considera huérfano y se recupera.
+#[derive(Debug)]
+pub struct InstanceLock {
+    path: PathBuf,
+    pid: u32,
+}
+
+impl InstanceLock {
+    pub fn acquire(paths: &Paths) -> Result<Self, StoreError> {
+        Self::acquire_at(&paths.lock(), std::process::id())
+    }
+
+    fn acquire_at(path: &Path, pid: u32) -> Result<Self, StoreError> {
+        use io::Write as _;
+
+        let dir = path.parent().unwrap_or(Path::new("."));
+        fs::create_dir_all(dir).map_err(io_err(dir))?;
+        // Dos intentos: el segundo solo tras retirar un bloqueo huérfano.
+        for _ in 0..2 {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+            {
+                Ok(mut f) => {
+                    f.write_all(pid.to_string().as_bytes())
+                        .map_err(io_err(path))?;
+                    return Ok(Self {
+                        path: path.to_owned(),
+                        pid,
+                    });
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                    if let Some(owner) = read_pid(path)
+                        && pid_alive(owner)
+                    {
+                        return Err(StoreError::Locked { pid: owner });
+                    }
+                    match fs::remove_file(path) {
+                        Ok(()) => {}
+                        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                        Err(e) => return Err(io_err(path)(e)),
+                    }
+                }
+                Err(e) => return Err(io_err(path)(e)),
+            }
+        }
+        // Otra instancia ganó la carrera justo después de retirar el huérfano.
+        Err(StoreError::Locked {
+            pid: read_pid(path).unwrap_or(0),
+        })
+    }
+}
+
+impl Drop for InstanceLock {
+    fn drop(&mut self) {
+        // Solo se borra si sigue siendo nuestro.
+        if read_pid(&self.path) == Some(self.pid) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+fn read_pid(path: &Path) -> Option<u32> {
+    fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+fn pid_alive(pid: u32) -> bool {
+    pid != 0 && Path::new("/proc").join(pid.to_string()).exists()
 }
 
 /// Todo lo cargado al arrancar, más los avisos para mostrar en la TUI.
@@ -516,5 +597,60 @@ mod tests {
         );
         assert!(!with_suffix(&p.history(), ".bak").exists());
         assert!(!with_suffix(&p.config(), ".bak").exists());
+    }
+
+    #[test]
+    fn lock_ruta_deriva_de_app_name() {
+        let p = Paths::at("/d/x", "/c/x");
+        assert_eq!(p.lock(), Path::new(&format!("/d/x/{APP_NAME}.lock")));
+    }
+
+    #[test]
+    fn lock_impide_segunda_instancia_y_se_libera() {
+        let t = TestDir::new("lock");
+        let p = paths(&t);
+        let first = InstanceLock::acquire(&p);
+        assert!(first.is_ok(), "{first:?}");
+        assert_eq!(read_pid(&p.lock()), Some(std::process::id()));
+
+        let second = InstanceLock::acquire(&p);
+        assert!(
+            matches!(second, Err(StoreError::Locked { pid }) if pid == std::process::id()),
+            "{second:?}"
+        );
+
+        drop(first);
+        assert!(!p.lock().exists(), "se borra al soltarse");
+        assert!(InstanceLock::acquire(&p).is_ok());
+    }
+
+    #[test]
+    fn lock_huerfano_se_recupera() {
+        let t = TestDir::new("lock-huerfano");
+        let p = paths(&t);
+        let _ = fs::create_dir_all(t.path().join("data"));
+        // PID inexistente (fuera del rango de Linux) y contenido basura: ambos huérfanos.
+        for stale in ["4294967295", "no-es-un-pid"] {
+            let _ = fs::write(p.lock(), stale);
+            let l = InstanceLock::acquire(&p);
+            assert!(l.is_ok(), "{stale}: {l:?}");
+            assert_eq!(read_pid(&p.lock()), Some(std::process::id()));
+        }
+    }
+
+    #[test]
+    fn lock_ajeno_vivo_no_se_toca_al_soltar() {
+        let t = TestDir::new("lock-ajeno");
+        let p = paths(&t);
+        let mine = InstanceLock::acquire(&p);
+        assert!(mine.is_ok());
+        // Otro proceso vivo (PID 1) se queda con el archivo: al soltar no lo borramos.
+        let _ = fs::write(p.lock(), "1");
+        drop(mine);
+        assert_eq!(read_pid(&p.lock()), Some(1));
+        assert!(matches!(
+            InstanceLock::acquire(&p),
+            Err(StoreError::Locked { pid: 1 })
+        ));
     }
 }

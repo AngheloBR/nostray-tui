@@ -26,7 +26,14 @@ pub const APP_NAME: &str = "nostray";
 fn main() -> anyhow::Result<ExitCode> {
     let cli = Cli::parse();
     let paths = Paths::from_env()?;
-    let loaded = store::load_all(&paths, load_mode(cli.command.as_ref()))?;
+    let mode = load_mode(cli.command.as_ref());
+    // La TUI escribe: una sola instancia a la vez. Se toma antes de cargar para que una
+    // segunda instancia no llegue a tocar ningún archivo. Se libera al salir de `main`.
+    let _lock = match mode {
+        store::Mode::ReadWrite => Some(store::InstanceLock::acquire(&paths)?),
+        store::Mode::ReadOnly => None,
+    };
+    let loaded = store::load_all(&paths, mode)?;
 
     match cli.command {
         Some(Cmd::Stats) => {
