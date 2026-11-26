@@ -158,7 +158,7 @@ Below 100 columns, one column (the panels that don't fit share a slot you rotate
 ## The CLI
 
 ```sh
-nostray                                   # TUI with the session picker
+nostray                                   # TUI with the picker (on the last session used)
 nostray start                             # TUI straight into the Clásico session
 nostray start --session deep --tag Inglés # chosen session and category
 nostray stats                             # plain-text summary, then exit
@@ -167,7 +167,7 @@ nostray --help | --version
 
 `--session` is one of `clasico`, `deep`, `flow`, `personalizado`; `--tag` is one of the
 categories in `config.toml` (case-insensitive). An unknown tag lists the valid ones and exits
-with code 2.
+with code 2. Without `--tag`, the last chosen category is used.
 
 ![nostray stats output with sample data](docs/cli-stats.svg)
 
@@ -185,7 +185,8 @@ with code 2.
 - **Notifications without a shell.** `notify-send --app-name=nostray -- <title> <body>` with
   separate arguments, reaped on a thread so the UI never blocks.
 
-Data lives in `$XDG_DATA_HOME/nostray/` (`history.json`, `tasks.json`; default
+Data lives in `$XDG_DATA_HOME/nostray/` (`history.json`, `tasks.json`, and `state.json` with
+the last session and category, restored on the next launch; default
 `~/.local/share/nostray/`) and `$XDG_CONFIG_HOME/nostray/config.toml` (default
 `~/.config/nostray/`). Only one TUI runs at a time: `nostray.lock` in the data directory holds
 its PID, and a stale lock (e.g. after `kill -9`) is recovered automatically. `nostray stats`

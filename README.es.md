@@ -138,6 +138,9 @@ en `config.toml`: de 1 a 8 nombres únicos de 1 a 20 caracteres. El historial gu
 tal cual, así que una categoría que quites de la configuración sigue contando en las
 estadísticas.
 
+nostray recuerda la última sesión y categoría elegidas (en `state.json`): al abrir sin
+argumentos, el selector aparece sobre la última sesión y la categoría es la de la vez anterior.
+
 ### Atajos
 
 | Tecla               | Acción                                              |
@@ -174,7 +177,7 @@ lo menos importante se recorta primero.
 ## La CLI
 
 ```sh
-nostray                                   # TUI con el selector de sesión
+nostray                                   # TUI con el selector (en la última sesión usada)
 nostray start                             # TUI directa con la sesión Clásico
 nostray start --session deep --tag Inglés # sesión y categoría elegidas
 nostray stats                             # resumen en texto y sale
@@ -183,7 +186,8 @@ nostray --help | --version
 
 - `--session`: `clasico`, `deep`, `flow` o `personalizado` (por defecto `clasico`).
 - `--tag`: una de las categorías de `config.toml`, sin distinguir mayúsculas. Si no existe,
-  `nostray` lo indica, lista las válidas y sale con código 2.
+  `nostray` lo indica, lista las válidas y sale con código 2. Sin `--tag` se usa la última
+  categoría elegida.
 - La TUI necesita una terminal interactiva; `stats` no.
 
 ![Salida de nostray stats con datos ficticios](docs/cli-stats.svg)
@@ -209,6 +213,7 @@ nostray --help | --version
 |----------------------------------------|---------------------------------|
 | `$XDG_DATA_HOME/nostray/history.json`  | historial de fases              |
 | `$XDG_DATA_HOME/nostray/tasks.json`    | tareas                          |
+| `$XDG_DATA_HOME/nostray/state.json`    | última sesión y categoría       |
 | `$XDG_DATA_HOME/nostray/nostray.lock`  | PID de la TUI abierta (bloqueo) |
 | `$XDG_CONFIG_HOME/nostray/config.toml` | configuración                   |
 
