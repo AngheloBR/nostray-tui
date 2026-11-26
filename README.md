@@ -200,8 +200,7 @@ To rename the program, change `APP_NAME` in `src/main.rs` and the `[[bin]]` name
 
 The monotonic clock doesn't advance while the machine is suspended. No locking between
 concurrent instances. Leaving mid-cycle discards that phase. Saving the config from the TUI
-drops the comments in `config.toml`. `nostray stats` creates a missing `config.toml` and moves
-corrupt files to `.bak`, like the TUI. Developed and tested on Linux (Fedora, X11).
+drops the comments in `config.toml`. Developed and tested on Linux (Fedora, X11).
 
 ## Development
 

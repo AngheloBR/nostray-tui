@@ -256,8 +256,6 @@ coinciden). Los datos guardados con el nombre anterior no se migran.
 - Al salir con un ciclo a medias, el tiempo de esa fase no se guarda.
 - Cuando la TUI guarda la configuración (al editar la sesión Personalizado), `config.toml` se
   reescribe sin los comentarios.
-- `nostray stats` usa la misma carga que la TUI: si falta `config.toml` lo crea y si un
-  archivo está corrupto lo renombra a `.bak`.
 - Desarrollado y probado en Linux (Fedora, X11). Fuera de alcance por ahora: sonido,
   integración con git, sincronización, red, temas configurables, plugins y exportación.
 
