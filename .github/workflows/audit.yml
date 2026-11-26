@@ -1,0 +1,23 @@
+name: Audit
+
+# Busca dependencias con fallos de seguridad conocidos (base de datos RustSec).
+# No abre PRs ni hace commits: si encuentra algo, el job falla y GitHub avisa por correo.
+on:
+  schedule:
+    - cron: "0 9 * * 1" # lunes 09:00 UTC
+  push:
+    paths: ["Cargo.toml", "Cargo.lock"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit --deny warnings

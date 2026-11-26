@@ -1,7 +1,7 @@
 //! Arranque y restauración de la terminal y bucle de eventos.
 //!
 //! - Salida normal: `ratatui::restore()` tras el bucle.
-//! - Panic: `ratatui::init()` instala un hook que restaura antes de imprimir.
+//! - Panic: `ratatui::try_init()` instala un hook que restaura antes de imprimir.
 //! - Ctrl+C: en raw mode llega como tecla y sale del bucle.
 //! - SIGTERM / SIGHUP / SIGINT: activan `stop` y el bucle sale limpio.
 
@@ -11,6 +11,8 @@ mod layout;
 mod panels;
 #[cfg(test)]
 mod snapshot;
+#[cfg(test)]
+mod svg;
 mod theme;
 mod ui;
 
@@ -61,7 +63,14 @@ pub fn run(
         start,
         category,
     );
-    let mut terminal = ratatui::init();
+    // `try_init` en vez de `init`: si la terminal no se deja preparar, error limpio, sin panic.
+    let mut terminal = match ratatui::try_init() {
+        Ok(t) => t,
+        Err(e) => {
+            ratatui::restore();
+            return Err(anyhow::Error::new(e).context("no se pudo preparar la terminal"));
+        }
+    };
     let res = event_loop(&mut terminal, &mut app, &stop);
     ratatui::restore();
     res

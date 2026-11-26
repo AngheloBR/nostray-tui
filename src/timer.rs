@@ -60,10 +60,12 @@ impl Timer {
         self.phase
     }
 
+    #[cfg(test)]
     pub fn durations(&self) -> Durations {
         self.durations
     }
 
+    #[cfg(test)]
     pub fn focus_done(&self) -> u8 {
         self.focus_done
     }
@@ -76,9 +78,34 @@ impl Timer {
         matches!(self.status, Status::Paused { .. })
     }
 
-    /// Hay un ciclo empezado (corriendo o en pausa con tiempo acumulado).
+    /// Hay un ciclo empezado: corriendo (aunque sea desde hace 0 s) o en pausa con tiempo.
     pub fn in_progress(&self, now: Instant) -> bool {
-        !self.elapsed(now).is_zero()
+        self.is_running() || !self.elapsed(now).is_zero()
+    }
+
+    /// Posición 1-based dentro de la serie hasta el descanso largo, o `None` sin descanso
+    /// largo. En un descanso cuenta el foco que se acaba de cerrar; en el largo, el último.
+    pub fn cycle(&self) -> Option<(u8, u8)> {
+        let every = self.durations.long?.every;
+        let pos = match self.phase {
+            Phase::Focus => self.focus_done.saturating_add(1),
+            Phase::ShortBreak => self.focus_done.max(1),
+            Phase::LongBreak => every,
+        };
+        Some((pos.min(every), every))
+    }
+
+    /// Fase que vendrá si la actual se completa, con su duración.
+    pub fn next_phase(&self) -> (Phase, Duration) {
+        match self.phase {
+            Phase::Focus => match self.durations.long {
+                Some(l) if self.focus_done.saturating_add(1) >= l.every => {
+                    (Phase::LongBreak, l.len)
+                }
+                _ => (Phase::ShortBreak, self.durations.short_break),
+            },
+            Phase::ShortBreak | Phase::LongBreak => (Phase::Focus, self.durations.focus),
+        }
     }
 
     pub fn planned(&self) -> Duration {
@@ -380,5 +407,43 @@ mod tests {
         let c = FakeClock::new("2026-03-14T09:00:00Z", TimeZone::UTC);
         assert_eq!(complete(&mut t, &c).map(|e| e.actual), Some(MIN));
         assert_eq!(t.phase(), Phase::LongBreak);
+    }
+
+    #[test]
+    fn recien_iniciado_ya_esta_en_curso() {
+        let (mut t, c) = clasico();
+        t.toggle(c.mono());
+        assert!(t.in_progress(c.mono()), "corriendo a 0 s también cuenta");
+    }
+
+    #[test]
+    fn ciclo_y_fase_siguiente() {
+        let (mut t, c) = clasico();
+        assert_eq!(t.cycle(), Some((1, 4)));
+        assert_eq!(t.next_phase(), (Phase::ShortBreak, MIN * 5));
+        complete(&mut t, &c);
+        assert_eq!(
+            t.cycle(),
+            Some((1, 4)),
+            "en el descanso cuenta el foco cerrado"
+        );
+        assert_eq!(t.next_phase(), (Phase::Focus, MIN * 25));
+        complete(&mut t, &c);
+        assert_eq!(t.cycle(), Some((2, 4)));
+        for _ in 0..2 {
+            complete(&mut t, &c);
+            complete(&mut t, &c);
+        }
+        assert_eq!(t.cycle(), Some((4, 4)));
+        assert_eq!(t.next_phase(), (Phase::LongBreak, MIN * 15));
+        complete(&mut t, &c);
+        assert_eq!(t.phase(), Phase::LongBreak);
+        assert_eq!(
+            t.cycle(),
+            Some((4, 4)),
+            "no vuelve a 1/4 en el descanso largo"
+        );
+        let deep = Timer::new(SessionKind::Deep.preset().unwrap_or(t.durations()));
+        assert_eq!(deep.cycle(), None);
     }
 }

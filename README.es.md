@@ -1,77 +1,177 @@
+<div align="center">
+
 # nostray
 
-Temporizador Pomodoro para la terminal, pensado para mantener el enfoque en
-cualquier actividad: programar, estudiar, practicar inglés, leer… TUI con
-cronómetro grande, sesiones tipo, categorías, meta diaria, distribución del
-tiempo, racha y un heatmap de actividad al estilo GitHub. Incluye una CLI
-mínima para arrancar directo o ver un resumen.
+**Pomodoro en la terminal. Para no desviarte.**
 
-[English](README.md)
+Una app de terminal para mantener el enfoque en lo que estés haciendo: programar, estudiar,
+practicar inglés, leer… Sesiones tipo, categorías, meta diaria, racha y un heatmap de
+actividad al estilo GitHub. Sin cuentas, sin red, sin servicios.
 
-## Capturas (en texto)
+[![crates.io](https://img.shields.io/crates/v/nostray-tui?logo=rust&color=a78bfa)](https://crates.io/crates/nostray-tui)
+[![CI](https://github.com/AngheloBR/nostray-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/AngheloBR/nostray-tui/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/nostray-tui?color=22d3ee)](#licencia)
 
-Generadas con el mismo código que dibuja la TUI (`TestBackend` de ratatui) y
-datos ficticios. En la terminal real los dígitos, las barras y el heatmap van en
-color (degradado violeta → cian; verde en los descansos y al cumplir la meta).
+Español · [English](README.md)
 
-Terminal de 80×24, foco en curso con una tarea activa:
+![Demo de nostray: elegir sesión, foco que termina, aviso y descanso](docs/demo.svg)
 
-```
- nostray v0.1.0                        Clásico · Programar · ciclo 1/4  ? ayuda
-╭ Timer ───────────────────────────────────────────────────────────────────────╮
-│                        ██████ ██████    ██████ ██████                        │
-│                            ██ ██     ██ ██  ██ ██  ██                        │
-│                        ██████ ██████    ██  ██ ██  ██                        │
-│                        ██         ██ ██ ██  ██ ██  ██                        │
-│                        ██████ ██████    ██████ ██████                        │
-│                                                                              │
-│             ● ENFOQUE   Programar · Escribir parser de ejemplo 1/4           │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   0%  │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭ Hoy ─────────────────────────────────────────────────────────────────────────╮
-│ Meta ▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱  12%  1/8 │
-│ 1 pomodoro · 25 min de foco                                                  │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭ Distribución · hoy ───────────────────────────────────────────── Tab ‹ 1/4 › ╮
-│ Programar ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰ 100%    25 min │
-│                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-  espacio  iniciar   c  categoría   Tab  panel   ?  ayuda   q  salir
-```
+</div>
 
-Panel «Racha y actividad» (cada columna es una semana, de lunes a domingo; la
-intensidad del color va de 0 a 4 según los pomodoros del día):
+## Lo destacado
 
-```
-╭ Racha y actividad ───────────────────────────────────────╮
-│ Racha 3 días  ·  mejor 5 días                            │
-│   sep     oct     nov     dic       ene     feb     mar  │
-│ L ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■  │
-│ M ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■  │
-│ X ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■  │
-│ J ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■  │
-│ V ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■  │
-│ S ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■  │
-│ D ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■    │
-│ 15 pomodoros · 27 semanas            menos ■ ■ ■ ■ ■ más │
-╰──────────────────────────────────────────────────────────╯
-```
+- **TUI interactiva.** Reloj grande, hora de fin, serie de ciclos `● ● ◉ ○` y lo que viene
+  después. La cabecera muestra el estado en vivo. Ejecutas `nostray` y listo.
+- **Sesiones tipo.** Clásico 25/5 con descanso largo, Deep work 50/10, Flow 90/20 y una
+  Personalizada que se edita en la propia TUI.
+- **Categorías y tareas.** Cada foco cuenta para una categoría (Programar, Estudiar, Inglés,
+  Leer, Otro, o las tuyas) y, si quieres, para una tarea con pomodoros estimados.
+- **Meta diaria, racha y heatmap.** Un punto por pomodoro hasta tu meta, la semana en
+  minibarras, la racha de días seguidos y hasta 53 semanas de actividad.
+- **CLI para el día a día.** `nostray start --session deep --tag Inglés` abre directo;
+  `nostray stats` imprime el resumen sin abrir la TUI.
+- **Avisos de escritorio** con `notify-send` al terminar cada fase, sin pasar por una shell.
+  Si no está instalado, la app sigue igual.
+- **Tus datos, en local y a salvo.** JSON y TOML en las rutas XDG, escrituras atómicas y nada
+  se borra: un archivo dañado se aparta como `.bak`.
+- **Un único binario.** Sin base de datos ni red; los precompilados son estáticos (musl) y no
+  dependen de ninguna librería del sistema.
 
 ## Instalación
 
-Necesitas Rust y Cargo (el `Cargo.toml` declara `rust-version = "1.88"`; se ha
-desarrollado y probado con 1.100). Desde la raíz del repositorio:
+### Binario precompilado (recomendado)
+
+Descargas un archivo y ya. No necesitas Rust ni paquetes extra:
 
 ```sh
-cargo install --path .
+curl -fsSL https://github.com/AngheloBR/nostray-tui/releases/latest/download/nostray-x86_64-unknown-linux-musl.tar.gz \
+  | tar xz --strip-components=1 -C ~/.local/bin nostray-x86_64-unknown-linux-musl/nostray
 ```
 
-Instala el binario `nostray` en `~/.cargo/bin` (asegúrate de tenerlo en el
-`PATH`). Para los avisos de escritorio hace falta `notify-send` (paquete
-`libnotify` en la mayoría de distribuciones); sin él, la app funciona igual y
-avisa solo en pantalla.
+En ARM (Raspberry Pi, laptops ARM) usa `aarch64-unknown-linux-musl`.
+Cada versión trae también su checksum `.sha256`.
 
-## Uso
+### Fedora / RHEL / openSUSE (.rpm) · Debian / Ubuntu / Mint (.deb)
+
+Descarga el paquete para tu sistema desde la
+[última versión](https://github.com/AngheloBR/nostray-tui/releases/latest) e instálalo con tu
+gestor de paquetes:
+
+```sh
+sudo dnf install ./nostray-tui-*.x86_64.rpm     # Fedora, RHEL
+sudo apt install ./nostray-tui_*_amd64.deb      # Debian, Ubuntu, Mint
+```
+
+El binario de dentro es estático, así que el mismo paquete funciona en versiones viejas y
+nuevas. Los paquetes recomiendan `libnotify` (`libnotify-bin` en Debian) para los avisos de
+escritorio. Para desinstalar: `sudo dnf remove nostray-tui` / `sudo apt remove nostray-tui`.
+
+### Con Cargo (crates.io)
+
+Si ya tienes Rust (1.88+):
+
+```sh
+cargo install nostray-tui     # instala el comando `nostray`
+```
+
+Para actualizar, repite el mismo comando; para desinstalar, `cargo uninstall nostray-tui`.
+Cargo deja el binario en `~/.cargo/bin`; si la terminal no encuentra `nostray`, agrega esa
+carpeta a tu `PATH`.
+
+### Desde el código
+
+Para tener los últimos cambios de `main` aún sin publicar:
+
+```sh
+cargo install --git https://github.com/AngheloBR/nostray-tui
+```
+
+### Requisitos
+
+- Linux y una terminal con color (truecolor para ver el degradado).
+- Opcional: `notify-send` (paquete `libnotify`) para los avisos de escritorio.
+
+## La TUI
+
+```sh
+nostray
+```
+
+Al abrir eliges la sesión; con `espacio` arranca el foco.
+
+![TUI de nostray a 140×40: tercer foco de la serie en curso](docs/tui-focus.svg)
+
+| Panel | Qué muestra |
+|-------|-------------|
+| **timer** | Dígitos grandes, fase (enfoque, descanso, pausa o en espera), categoría y tarea activa. Debajo, la serie hasta el descanso largo (`●` hecho, `◉` actual, `○` pendiente), la hora a la que termina y lo que viene después. El borde se ilumina mientras corre. |
+| **hoy** | Barra y porcentaje de la meta diaria (por defecto 8; puede pasar de 100 %), un punto por pomodoro, minutos de foco, cuántos faltan y la semana de lunes a domingo en minibarras. |
+| **distribución** | Minutos y porcentaje por categoría, de hoy o de los últimos 7 días (`v`). Los porcentajes suman 100. |
+| **racha y actividad** | Racha actual y mejor racha (días seguidos con al menos un pomodoro; la actual sigue viva hasta que acaba el día) y un heatmap de hasta 53 semanas. Con meta 8, cada día tiene nivel 1 con 1–2 pomodoros, 2 con 3–4, 3 con 5–6 y 4 con 7 o más. |
+| **tareas** | Opcional. Pomodoros hechos y estimados, tarea activa (`●`); cada foco completado suma uno a la tarea activa. |
+| **log** | Una fila por fase cerrada (hora, categoría o descanso, tarea, sesión, duración, `✓` completada o `↷` saltada), la más reciente arriba. |
+
+Solo cuentan para las estadísticas los focos completados; los saltados y los descansos
+aparecen en el log pero no suman.
+
+![Descanso en curso a 100×30](docs/tui-break.svg)
+
+### Sesiones
+
+| Sesión        | Enfoque | Descanso | Descanso largo            |
+|---------------|---------|----------|---------------------------|
+| Clásico       | 25 min  | 5 min    | 15 min tras 4 focos       |
+| Deep work     | 50 min  | 10 min   | —                         |
+| Flow          | 90 min  | 20 min   | —                         |
+| Personalizado | 1–180   | 1–60     | 1–90 min tras 1–12 focos  |
+
+La sesión Personalizado se edita en la TUI (`m` → Personalizado → `e`) o en `config.toml`.
+Al terminar una fase, la siguiente queda en espera hasta que pulses `espacio`. Cambiar de
+sesión con un ciclo en curso pide confirmación y lo reinicia; si la cancelas, no se guarda
+nada.
+
+![Selector de sesión](docs/tui-sessions.svg)
+
+### Categorías
+
+Cada foco se asigna a la categoría vigente al cerrarse; se cambia con `c`. La lista se edita
+en `config.toml`: de 1 a 8 nombres únicos de 1 a 20 caracteres. El historial guarda el nombre
+tal cual, así que una categoría que quites de la configuración sigue contando en las
+estadísticas.
+
+### Atajos
+
+| Tecla               | Acción                                              |
+|---------------------|-----------------------------------------------------|
+| `espacio`           | iniciar · pausar · reanudar                         |
+| `s`                 | saltar la fase actual                               |
+| `r`                 | reiniciar la fase actual                            |
+| `m`                 | cambiar de sesión                                   |
+| `c`                 | cambiar de categoría (flechas o `1`–`8`)            |
+| `Tab` / `Shift+Tab` | panel siguiente / anterior (rota los ocultos)       |
+| `?`                 | ayuda con todos los atajos (`↑↓` si no cabe)        |
+| `q`                 | salir (pide confirmación si hay un ciclo en curso)  |
+| `Ctrl+C`            | salir ya                                            |
+
+Con el panel enfocado:
+
+| Panel        | Teclas |
+|--------------|--------|
+| tareas       | `a` alta · `e` editar · `x` borrar · `⏎` activa (o la desmarca) · `+`/`-` estimado (1–20) · `↑↓` mover |
+| log          | `↑↓` · RePág/AvPág · Inicio/Fin |
+| distribución | `v` hoy / 7 días |
+
+### Tamaños de terminal
+
+| Ancho   | Disposición |
+|---------|-------------|
+| < 100   | Una columna: timer y hoy fijos; el resto apilado si cabe, o en un hueco que rota con `Tab` |
+| 100–139 | Dos columnas: timer, hoy, distribución · actividad, tareas, log |
+| ≥ 140   | Dos columnas; dígitos a escala grande si hay altura |
+
+Por debajo de 40×12 se muestra un aviso de tamaño mínimo. La cabecera y el pie se adaptan:
+lo menos importante se recorta primero.
+
+## La CLI
 
 ```sh
 nostray                                   # TUI con el selector de sesión
@@ -82,126 +182,39 @@ nostray --help | --version
 ```
 
 - `--session`: `clasico`, `deep`, `flow` o `personalizado` (por defecto `clasico`).
-- `--tag`: una de las categorías de `config.toml`, sin distinguir mayúsculas.
-  Si no existe, `nostray` lo indica, lista las válidas y sale con código 2.
+- `--tag`: una de las categorías de `config.toml`, sin distinguir mayúsculas. Si no existe,
+  `nostray` lo indica, lista las válidas y sale con código 2.
 - La TUI necesita una terminal interactiva; `stats` no.
 
-Ejemplo de `nostray stats` (datos ficticios):
+![Salida de nostray stats con datos ficticios](docs/cli-stats.svg)
 
-```
-nostray · resumen al 25-11-2026
-Hoy      3/8 pomodoros (37 %) · 75 min de foco
-7 días   5 pomodoros · 150 min de foco
-         Programar   33 %     50 min
-         Estudiar    33 %     50 min
-         Inglés      17 %     25 min
-         Leer        17 %     25 min
-Racha    3 días · mejor 3 días
-```
+## Cómo funciona
 
-## Sesiones
+- **Temporizador puro.** Una máquina de estados (en espera → corriendo ⇄ en pausa) que recibe
+  la hora en cada operación y nunca duerme. Mide con el reloj monotónico, así que cambiar la
+  hora del sistema no altera una fase en curso.
+- **Fecha local al cerrar.** Cada fase se guarda con su instante UTC y el día local en que
+  terminó, así que las estadísticas no cambian si viajas de zona horaria.
+- **Escrituras atómicas.** Archivo temporal, `sync`, renombrado y `sync` del directorio.
+  Si un archivo no se puede leer (JSON/TOML corrupto o de una versión desconocida), no se
+  borra: se renombra a `.bak` (`.bak.1`, `.bak.2`…), se arranca con uno vacío y se avisa.
+- **Terminal siempre restaurada.** Al salir de forma normal, con `Ctrl+C`, con
+  SIGTERM/SIGHUP/SIGINT y también si el programa entra en pánico.
+- **Avisos sin shell.** `notify-send --app-name=nostray -- <título> <cuerpo>` con argumentos
+  separados; el proceso se recoge en un hilo para no bloquear la interfaz.
 
-| Sesión        | Enfoque | Descanso | Descanso largo            |
-|---------------|---------|----------|---------------------------|
-| Clásico       | 25 min  | 5 min    | 15 min tras 4 focos       |
-| Deep work     | 50 min  | 10 min   | —                         |
-| Flow          | 90 min  | 20 min   | —                         |
-| Personalizado | 1–180   | 1–60     | 1–90 min tras 1–12 focos  |
+### Datos
 
-La sesión Personalizado se edita en la TUI (`m` → Personalizado → `e`) o en
-`config.toml`. Al terminar una fase, la siguiente queda en espera hasta que
-pulses espacio. Cambiar de sesión con un ciclo en curso pide confirmación y lo
-reinicia.
-
-## Categorías
-
-Cada foco se asigna a una categoría (por defecto: Programar, Estudiar, Inglés,
-Leer, Otro). Se cambia con `c` y se guarda la vigente al cerrar el ciclo. La
-lista se edita en `config.toml`: de 1 a 8 nombres únicos de 1 a 20 caracteres.
-El historial guarda el nombre tal cual, así que una categoría que quites de la
-configuración sigue contando en las estadísticas.
-
-## Paneles
-
-- **Timer**: dígitos grandes, estado (enfoque / descanso / pausa / en espera),
-  categoría, tarea activa y barra de progreso.
-- **Hoy**: porcentaje de la meta diaria (por defecto 8 pomodoros) con barra,
-  pomodoros y minutos de foco. Puede pasar de 100 %.
-- **Distribución**: minutos y porcentaje por categoría, hoy o últimos 7 días
-  (`v` con el panel enfocado). Los porcentajes suman 100.
-- **Racha y actividad**: racha actual y mejor racha (días consecutivos con al
-  menos un pomodoro; la actual sigue viva hasta que acaba el día) y heatmap de
-  hasta 53 semanas, tantas como quepan. Nivel de cada día respecto a la meta:
-  con meta 8, 1–2 → nivel 1, 3–4 → 2, 5–6 → 3, 7 o más → 4.
-- **Tareas** (opcional): pomodoros hechos/estimados, tarea activa; cada foco
-  completado suma uno a la tarea activa.
-- **Log**: una línea por fase cerrada (hora, sesión, categoría o descanso,
-  tarea, duración, ✓ o «saltado»), la más reciente arriba.
-
-Solo cuentan para las estadísticas los focos completados; los saltados y los
-descansos aparecen en el Log pero no suman.
-
-### Tamaños de terminal
-
-| Ancho   | Disposición                                                        |
-|---------|--------------------------------------------------------------------|
-| < 100   | Una columna: Timer y Hoy fijos; el resto apilado si cabe, o en un hueco que rota con `Tab` |
-| 100–139 | Dos columnas: Timer, Hoy, Distribución · Actividad, Tareas, Log    |
-| ≥ 140   | Dos columnas; dígitos a escala grande si hay altura                |
-
-Por debajo de 40×12 se muestra un aviso de tamaño mínimo.
-
-## Atajos
-
-| Tecla         | Acción                                         |
-|---------------|------------------------------------------------|
-| espacio       | iniciar · pausar · reanudar                    |
-| `s`           | saltar la fase actual                          |
-| `r`           | reiniciar la fase actual                       |
-| `m`           | cambiar de sesión                              |
-| `c`           | cambiar de categoría (flechas o `1`–`8`)       |
-| `Tab` / `Shift+Tab` | panel siguiente / anterior (rota los ocultos) |
-| `?`           | ayuda con todos los atajos                     |
-| `q`           | salir (pide confirmación si hay un ciclo en curso) |
-| `Ctrl+C`      | salir ya                                       |
-
-Con el panel enfocado:
-
-| Panel        | Teclas                                                              |
-|--------------|---------------------------------------------------------------------|
-| Tareas       | `a` alta · `e` editar · `x` borrar · `⏎` activa (o la desmarca) · `+`/`-` estimado (1–20) · `↑↓` mover |
-| Log          | `↑↓` · RePág/AvPág · Inicio/Fin                                     |
-| Distribución | `v` hoy / 7 días                                                    |
-
-La terminal se restaura al salir de forma normal, con `Ctrl+C`, con
-SIGTERM/SIGHUP/SIGINT y también si el programa entra en pánico.
-
-## Avisos
-
-Al terminar sola una fase de foco o de descanso, `nostray` lanza
-`notify-send --app-name=nostray -- <título> <cuerpo>` (sin pasar por una
-shell). Saltar una fase no genera aviso. Si `notify-send` no está instalado, se
-avisa una vez en la TUI y se sigue sin notificaciones de escritorio. No hay
-sonido.
-
-## Datos
-
-| Archivo                                       | Contenido               |
-|-----------------------------------------------|-------------------------|
-| `$XDG_DATA_HOME/nostray/history.json`         | historial de fases      |
-| `$XDG_DATA_HOME/nostray/tasks.json`           | tareas                  |
-| `$XDG_CONFIG_HOME/nostray/config.toml`        | configuración           |
+| Archivo                                | Contenido          |
+|----------------------------------------|--------------------|
+| `$XDG_DATA_HOME/nostray/history.json`  | historial de fases |
+| `$XDG_DATA_HOME/nostray/tasks.json`    | tareas             |
+| `$XDG_CONFIG_HOME/nostray/config.toml` | configuración      |
 
 Si no están definidas las variables XDG, se usan `~/.local/share/nostray/` y
-`~/.config/nostray/`.
-
-- Cada escritura es atómica (archivo temporal + `sync` + renombrado).
-- Si un archivo no se puede leer (JSON/TOML corrupto o de una versión
-  desconocida) no se borra: se renombra a `<archivo>.bak` (o `.bak.1`, `.bak.2`…),
-  se arranca con ese archivo vacío y se avisa en pantalla.
-- En `config.toml`, un valor fuera de rango se sustituye por el de por defecto
-  solo en memoria (con aviso); el archivo no se toca.
-- Si `config.toml` no existe, se crea con valores por defecto y comentarios.
+`~/.config/nostray/`. Si `config.toml` no existe, se crea con valores por defecto y
+comentarios. Un valor fuera de rango se sustituye por el de por defecto solo en memoria (con
+aviso); el archivo no se toca.
 
 `config.toml` por defecto:
 
@@ -228,33 +241,25 @@ Para probar sin tocar tus datos:
 XDG_DATA_HOME=/tmp/nostray-prueba/data XDG_CONFIG_HOME=/tmp/nostray-prueba/config nostray
 ```
 
-## Renombrar el programa
+### Renombrar el programa
 
-El nombre sale de una sola constante, `APP_NAME` en `src/main.rs`; de ella
-derivan las rutas de datos, el título y los textos. Para renombrar:
+El nombre sale de una sola constante, `APP_NAME` en `src/main.rs`; de ella derivan las rutas
+de datos, el título y los textos. Para renombrar, cambia `APP_NAME` y el `name` de `[[bin]]`
+en `Cargo.toml` al mismo valor (el test `app_name_coincide_con_binario` falla si no
+coinciden). Los datos guardados con el nombre anterior no se migran.
 
-1. Cambia `APP_NAME` en `src/main.rs`.
-2. Cambia `name` en la sección `[[bin]]` de `Cargo.toml` al mismo valor (un test,
-   `app_name_coincide_con_binario`, falla si no coinciden).
-3. Opcional: el `name` del paquete y `repository` en `Cargo.toml`.
+## Limitaciones
 
-Los datos guardados con el nombre anterior no se migran: quedan en su carpeta
-antigua.
-
-## Limitaciones de la v1
-
-- La duración de las fases se mide con el reloj monotónico del sistema, que en
-  Linux no avanza mientras el equipo está suspendido: una fase en curso durante
+- El reloj monotónico no avanza mientras el equipo está suspendido: una fase en curso durante
   una suspensión termina más tarde.
 - Sin bloqueo entre instancias: si abres dos a la vez, la última que guarda gana.
 - Al salir con un ciclo a medias, el tiempo de esa fase no se guarda.
-- Cuando la TUI guarda la configuración (al editar la sesión Personalizado),
-  `config.toml` se reescribe sin los comentarios.
-- `nostray stats` usa la misma carga que la TUI: si falta `config.toml` lo crea
-  y si un archivo está corrupto lo renombra a `.bak`.
-- Desarrollado y probado en Linux (Fedora, X11). Fuera de alcance en esta
-  versión: sonido, integración con git, sincronización, red, Wayland, temas
-  configurables, plugins y exportación.
+- Cuando la TUI guarda la configuración (al editar la sesión Personalizado), `config.toml` se
+  reescribe sin los comentarios.
+- `nostray stats` usa la misma carga que la TUI: si falta `config.toml` lo crea y si un
+  archivo está corrupto lo renombra a `.bak`.
+- Desarrollado y probado en Linux (Fedora, X11). Fuera de alcance por ahora: sonido,
+  integración con git, sincronización, red, temas configurables, plugins y exportación.
 
 ## Desarrollo
 
@@ -262,11 +267,14 @@ antigua.
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+cargo test snapshots -- --ignored   # regenera las capturas de docs/
+cargo test demo -- --ignored        # regenera docs/demo.svg
 ```
 
-Los tests usan un reloj falso (sin esperas reales), directorios temporales
-dentro de `target/` y renderizan cada panel con `TestBackend`.
+Los tests usan un reloj falso (sin esperas reales) y directorios temporales dentro de
+`target/`. Las capturas salen del mismo código que dibuja la TUI, con datos ficticios, así que
+siempre coinciden con la app.
 
 ## Licencia
 
-Bajo tu elección de [MIT](LICENSE-MIT) o [Apache-2.0](LICENSE-APACHE).
+Doble licencia [MIT](LICENSE-MIT) o [Apache-2.0](LICENSE-APACHE), a tu elección.

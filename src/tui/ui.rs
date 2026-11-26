@@ -26,7 +26,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     for p in &screen.panels {
         draw_panel(f, app, p, screen.big_timer);
     }
-    draw_footer(f, screen.footer);
+    draw_footer(f, screen.footer, app);
     if let Some(m) = app.modal.clone() {
         draw_modal(f, area, app, m);
     }
@@ -36,9 +36,25 @@ pub(super) fn draw_panel(f: &mut Frame, app: &App, p: &Placed, big: bool) {
     let hot = app.focus == p.id;
     let title = match p.id {
         PanelId::Dist => panels::dist::title(app),
+        PanelId::Tasks if !app.tasks.tasks.is_empty() => {
+            let done = app
+                .tasks
+                .tasks
+                .iter()
+                .filter(|t| t.done >= t.estimate)
+                .count();
+            format!("tareas · {done}/{}", app.tasks.tasks.len())
+        }
+        PanelId::Log if !app.history.cycles.is_empty() => {
+            format!("log · {}", app.history.cycles.len())
+        }
         id => id.title().to_owned(),
     };
     let mut block = panel_block(&title, hot, p.rot);
+    // Como en nosleep: el Timer se ilumina mientras corre, tenga o no el foco.
+    if p.id == PanelId::Timer && app.timer.is_running() && !hot {
+        block = block.border_style(fg(phase_color(app, 0.6)));
+    }
     let bottom_hint = match p.id {
         PanelId::Dist => Some("v hoy / 7 días"),
         PanelId::Tasks => Some("a alta · e editar · x borrar · ⏎ activa · +/−"),
@@ -83,6 +99,71 @@ pub fn panel_block(title: &str, hot: bool, rot: Option<(usize, usize)>) -> Block
         );
     }
     b
+}
+
+/// Interior de un panel ya sin borde: margen de 2 columnas si hay ancho, si no de 1.
+pub fn pad(inner: Rect) -> Rect {
+    let m = if inner.width >= 60 { 2 } else { 1 };
+    inner.inner(Margin::new(m, 0))
+}
+
+/// Color de la fase en curso: acento en foco, verde en descanso.
+pub fn phase_color(app: &App, t: f64) -> ratatui::style::Color {
+    if app.timer.phase() == crate::timer::Phase::Focus {
+        accent(t)
+    } else {
+        OK
+    }
+}
+
+/// Parpadeo lento (cambia cada segundo de la fase).
+fn pulse(app: &App) -> bool {
+    app.timer.remaining(app.now).as_secs().is_multiple_of(2)
+}
+
+/// Estado en vivo para la cabecera. `short`: sin hora de fin ni pista, para cuando
+/// no cabe junto a la sesión.
+fn status_spans(app: &App, short: bool) -> Vec<Span<'static>> {
+    use crate::timer::Phase;
+    let c = phase_color(app, 0.4);
+    let verb = match app.timer.phase() {
+        Phase::Focus => "enfocando",
+        Phase::ShortBreak => "descansando",
+        Phase::LongBreak => "descanso largo",
+    };
+    let (mut v, extra) = if app.timer.is_running() {
+        let extra = app.ends_at().map(|t| {
+            vec![
+                Span::styled(" · termina ", fg(DIM)),
+                Span::styled(t, fg(TEXT)),
+            ]
+        });
+        (
+            vec![Span::styled("● ", fg(c)), Span::styled(verb, bold(c))],
+            extra.unwrap_or_default(),
+        )
+    } else if app.timer.is_paused() {
+        let left = panels::timer::mmss(app.timer.remaining(app.now));
+        (
+            vec![
+                Span::styled("‖ ", fg(WARN)),
+                Span::styled("en pausa", bold(WARN)),
+            ],
+            vec![Span::styled(format!(" · quedan {left}"), fg(DIM))],
+        )
+    } else {
+        (
+            vec![
+                Span::styled("○ ", fg(DIM)),
+                Span::styled("listo", fg(MUTED)),
+            ],
+            vec![Span::styled(" · espacio para empezar", fg(DIM))],
+        )
+    };
+    if !short {
+        v.extend(extra);
+    }
+    v
 }
 
 pub fn gradient(text: &str) -> Vec<Span<'static>> {
@@ -152,61 +233,101 @@ fn too_small(f: &mut Frame, area: Rect) {
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App) {
     let area = area.inner(Margin::new(1, 0));
-    let mut left = gradient(APP_NAME);
+    let dot = if !app.timer.is_running() {
+        DIM
+    } else if pulse(app) {
+        phase_color(app, 0.0)
+    } else {
+        FAINT
+    };
+    let mut left = vec![Span::styled("◉ ", fg(dot))];
+    left.extend(gradient(APP_NAME));
     left.push(Span::styled(
-        format!(" v{}", env!("CARGO_PKG_VERSION")),
+        format!("  v{}", env!("CARGO_PKG_VERSION")),
         fg(FAINT),
     ));
 
-    let d = app.timer.durations();
     let mut right = vec![
         Span::styled(app.session.label(), fg(MUTED)),
         Span::styled(" · ", fg(FAINT)),
         Span::styled(app.category_name().to_owned(), fg(MUTED)),
     ];
-    if let Some(l) = d.long {
+    if let Some((i, n)) = app.timer.cycle() {
         right.push(Span::styled(" · ", fg(FAINT)));
-        right.push(Span::styled(
-            format!("ciclo {}/{}", app.timer.focus_done() + 1, l.every),
-            fg(MUTED),
-        ));
+        right.push(Span::styled(format!("ciclo {i}/{n}"), fg(MUTED)));
     }
-    right.push(Span::styled("  ? ayuda", fg(DIM)));
 
-    // Si no cabe todo, se sacrifica primero la parte derecha.
+    // Centro: el aviso si hay uno; si no, el estado en vivo.
+    let mid: Vec<Span> = match app.toast() {
+        Some(t) => {
+            let (icon, c) = match t.level {
+                Level::Ok => ("✓ ", OK),
+                Level::Info => ("· ", accent(0.6)),
+                Level::Warn => ("! ", WARN),
+                Level::Err => ("✗ ", ERR),
+            };
+            let msg = t.msg.trim_start_matches("✓ ");
+            vec![Span::styled(format!("{icon}{msg}"), fg(c))]
+        }
+        None => {
+            let full = status_spans(app, false);
+            let fits = width(&left) + width(&full) + width(&right) + 6 <= usize::from(area.width);
+            if fits { full } else { status_spans(app, true) }
+        }
+    };
+
+    // Prioridad si no cabe: izquierda, centro (recortado), derecha.
     let w = usize::from(area.width);
-    let right_fits = width(&left) + width(&right) + 2 <= w;
-    f.render_widget(Paragraph::new(Line::from(left.clone())), area);
+    let lw = width(&left);
+    let right_fits = lw + width(&mid) + width(&right) + 6 <= w;
+    let rw = if right_fits { width(&right) } else { 0 };
+    f.render_widget(Paragraph::new(Line::from(left)), area);
     if right_fits {
         f.render_widget(
-            Paragraph::new(Line::from(right.clone())).alignment(Alignment::Right),
+            Paragraph::new(Line::from(right)).alignment(Alignment::Right),
             area,
         );
     }
-
-    if let Some(t) = app.toast() {
-        let used = width(&left) + if right_fits { width(&right) } else { 0 };
-        let free = w.saturating_sub(used + 4);
-        let (icon, c) = match t.level {
-            Level::Ok => ("✓ ", OK),
-            Level::Info => ("· ", accent(0.6)),
-            Level::Warn => ("! ", WARN),
-            Level::Err => ("✗ ", ERR),
-        };
-        let msg = t.msg.trim_start_matches("✓ ");
-        let text = ellipsize(&format!("{icon}{msg}"), free);
-        if free >= 6 {
-            let x = area.x + u16::try_from(width(&left) + 2).unwrap_or(0);
-            let r = Rect::new(x, area.y, u16::try_from(free).unwrap_or(0), 1);
-            f.render_widget(Paragraph::new(Line::styled(text, fg(c))), r);
-        }
+    let free = w.saturating_sub(lw + rw + 4);
+    if free < 6 {
+        return;
     }
+    let mw = width(&mid);
+    let mid = if mw > free {
+        let text: String = mid.iter().map(|s| s.content.as_ref()).collect();
+        let c = mid.first().and_then(|s| s.style.fg).unwrap_or(MUTED);
+        vec![Span::styled(ellipsize(&text, free), fg(c))]
+    } else {
+        mid
+    };
+    let mw = width(&mid);
+    // Centrado en la pantalla si no pisa nada; si no, justo tras la izquierda.
+    let centered_x = w.saturating_sub(mw) / 2;
+    let x = if centered_x >= lw + 2 && centered_x + mw + 2 <= w - rw {
+        centered_x
+    } else {
+        lw + 2
+    };
+    let r = Rect::new(
+        area.x + u16::try_from(x).unwrap_or(0),
+        area.y,
+        u16::try_from(mw).unwrap_or(0),
+        1,
+    );
+    f.render_widget(Paragraph::new(Line::from(mid)), r);
 }
 
-fn draw_footer(f: &mut Frame, area: Rect) {
+fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let area = area.inner(Margin::new(1, 0));
+    let space = if app.timer.is_running() {
+        "pausar"
+    } else if app.timer.is_paused() {
+        "reanudar"
+    } else {
+        "iniciar"
+    };
     let items: [(&str, &str); 8] = [
-        ("espacio", "iniciar"),
+        ("espacio", space),
         ("s", "saltar"),
         ("r", "reiniciar"),
         ("m", "sesión"),
@@ -281,7 +402,7 @@ fn hint(pairs: &[(&str, &str)]) -> Line<'static> {
 
 fn draw_modal(f: &mut Frame, area: Rect, app: &App, m: Modal) {
     match m {
-        Modal::Help => {
+        Modal::Help(top) => {
             let rows: [(&str, &str); 10] = [
                 ("espacio", "iniciar · pausar · reanudar"),
                 ("s", "saltar la fase actual"),
@@ -311,8 +432,17 @@ fn draw_modal(f: &mut Frame, area: Rect, app: &App, m: Modal) {
             lines.extend(rows.iter().map(|(k, d)| row(k, d)));
             lines.push(Line::styled("  con el panel enfocado", fg(DIM)));
             lines.extend(panel_rows.iter().map(|(k, d)| row(k, d)));
-            lines.push(Line::default());
-            lines.push(Line::styled("  cualquier tecla para cerrar", fg(DIM)));
+            // Si no cabe, se desplaza con ↑↓ y la última línea lo indica.
+            let room = usize::from(area.height.saturating_sub(3));
+            let top = usize::from(top).min(lines.len().saturating_sub(room));
+            let clipped = lines.len() > room;
+            let mut lines: Vec<Line> = lines.into_iter().skip(top).take(room).collect();
+            if clipped {
+                lines.push(Line::styled("  ↑↓ desplazar · otra tecla cierra", fg(DIM)));
+            } else {
+                lines.push(Line::default());
+                lines.push(Line::styled("  cualquier tecla para cerrar", fg(DIM)));
+            }
             show(f, area, "atajos", lines, 56);
         }
         Modal::Categories(idx) => {
@@ -400,7 +530,7 @@ fn draw_modal(f: &mut Frame, area: Rect, app: &App, m: Modal) {
             lines.push(hint(&keys));
             show(f, area, "sesión", lines, 56);
         }
-        Modal::ConfirmSwitch(k) => {
+        Modal::ConfirmSwitch { kind: k, .. } => {
             let lines = vec![
                 Line::default(),
                 Line::styled(

@@ -5,7 +5,7 @@
 
 use ratatui::{
     Frame,
-    layout::{Margin, Rect},
+    layout::Rect,
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -106,23 +106,25 @@ fn legend(total: u32, weeks: usize, w: usize) -> Line<'static> {
         right.push(Span::raw(" "));
     }
     right.push(Span::styled("más", fg(DIM)));
-    let left = vec![Span::styled(
+    // Resumen completo, corto o ninguno; la leyenda siempre a la derecha.
+    let left = [
         format!("{total} pomodoros · {weeks} semanas"),
-        fg(MUTED),
-    )];
+        format!("{total} en {weeks} sem."),
+        String::new(),
+    ]
+    .into_iter()
+    .map(|t| vec![Span::styled(t, fg(MUTED))])
+    .find(|l| width(l) + width(&right) + 2 <= w)
+    .unwrap_or_default();
     let gap = w.saturating_sub(width(&left) + width(&right));
     let mut spans = left;
-    if gap >= 2 {
-        spans.push(Span::raw(" ".repeat(gap)));
-        spans.extend(right);
-    } else {
-        spans = right;
-    }
+    spans.push(Span::raw(" ".repeat(gap)));
+    spans.extend(right);
     Line::from(spans)
 }
 
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
-    let inner = area.inner(Margin::new(1, 0));
+    let inner = crate::tui::ui::pad(area);
     if inner.width == 0 || inner.height == 0 {
         return;
     }

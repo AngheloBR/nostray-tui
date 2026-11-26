@@ -19,6 +19,10 @@ use crate::{
 };
 
 const TOAST_FOR: Duration = Duration::from_secs(4);
+/// Avisos en cola como mucho (el visible incluido): los intermedios se descartan.
+const TOAST_MAX: usize = 3;
+/// Tope del desplazamiento de la ayuda (más que sus líneas: el dibujo lo ajusta).
+const HELP_MAX_TOP: u16 = 24;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
@@ -43,7 +47,8 @@ pub enum DistRange {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Modal {
-    Help,
+    /// Ayuda; el número es la primera línea visible (se desplaza con ↑↓).
+    Help(u16),
     /// Selector de categoría.
     Categories(usize),
     /// Texto de una tarea: `edit = None` es alta.
@@ -57,7 +62,11 @@ pub enum Modal {
         idx: usize,
         initial: bool,
     },
-    ConfirmSwitch(SessionKind),
+    /// `custom`: valores editados de Personalizado que solo se guardan si se confirma.
+    ConfirmSwitch {
+        kind: SessionKind,
+        custom: Option<Custom>,
+    },
     EditCustom {
         field: usize,
         values: Custom,
@@ -162,15 +171,39 @@ impl App {
         crate::stats::day(&self.history, self.today, self.config.daily_goal).pomodoros
     }
 
+    /// Hora local («HH:MM») a la que acabará la fase si sigue corriendo.
+    pub fn ends_at(&self) -> Option<String> {
+        if !self.timer.is_running() {
+            return None;
+        }
+        let rem = jiff::SignedDuration::try_from(self.timer.remaining(self.now)).ok()?;
+        let at = self.clock.now().checked_add(rem).ok()?;
+        Some(
+            at.to_zoned_datetime(self.clock.tz())
+                .strftime("%H:%M")
+                .to_string(),
+        )
+    }
+
     pub fn toast(&self) -> Option<&Toast> {
         self.toasts.front()
     }
 
     pub fn say(&mut self, msg: impl Into<String>, level: Level) {
-        self.toasts.push_back(Toast {
+        let t = Toast {
             msg: msg.into(),
             level,
-        });
+        };
+        if self.toasts.back() == Some(&t) {
+            return;
+        }
+        // Se conserva el visible y los más nuevos: una ráfaga no deja cola de minutos.
+        while self.toasts.len() >= TOAST_MAX {
+            if self.toasts.remove(1).is_none() {
+                break;
+            }
+        }
+        self.toasts.push_back(t);
     }
 
     /// El panel que se muestra en un hueco que rota: el más reciente enfocado.
@@ -384,12 +417,25 @@ impl App {
         self.say(format!("sesión {}", kind.label()), Level::Info);
     }
 
-    fn choose_session(&mut self, kind: SessionKind) -> Option<Modal> {
+    /// Elige sesión; con un ciclo en curso pide confirmación antes de tocar nada.
+    fn choose_session(&mut self, kind: SessionKind, custom: Option<Custom>) -> Option<Modal> {
         if self.timer.in_progress(self.now) {
-            return Some(Modal::ConfirmSwitch(kind));
+            return Some(Modal::ConfirmSwitch { kind, custom });
+        }
+        self.switch_session(kind, custom);
+        None
+    }
+
+    fn switch_session(&mut self, kind: SessionKind, custom: Option<Custom>) {
+        if let Some(values) = custom {
+            self.config.custom = values;
+            if let Some(p) = &self.paths
+                && let Err(e) = store::save_config(&p.config(), &self.config)
+            {
+                self.say(format!("no se pudo guardar: {e}"), Level::Err);
+            }
         }
         self.apply_session(kind);
-        None
     }
 
     fn set_focus(&mut self, p: PanelId) {
@@ -443,7 +489,7 @@ impl App {
                 };
             }
             KeyCode::Char('c') => self.modal = Some(Modal::Categories(self.category)),
-            KeyCode::Char('?') => self.modal = Some(Modal::Help),
+            KeyCode::Char('?') => self.modal = Some(Modal::Help(0)),
             KeyCode::Char('q') => {
                 if self.timer.in_progress(self.now) {
                     self.modal = Some(Modal::ConfirmQuit);
@@ -495,7 +541,13 @@ impl App {
             KeyCode::Char('s' | 'S' | 'y' | 'Y') | KeyCode::Enter
         );
         match m {
-            Modal::Help => None,
+            Modal::Help(top) => match k.code {
+                KeyCode::Down | KeyCode::Char('j') => {
+                    Some(Modal::Help(top.saturating_add(1).min(HELP_MAX_TOP)))
+                }
+                KeyCode::Up | KeyCode::Char('k') => Some(Modal::Help(top.saturating_sub(1))),
+                _ => None,
+            },
             Modal::TaskInput { edit, buf } => self.on_text_key(edit, buf, k),
             Modal::ConfirmDelete(id) => {
                 if yes {
@@ -531,9 +583,9 @@ impl App {
                 self.quit = yes;
                 None
             }
-            Modal::ConfirmSwitch(kind) => {
+            Modal::ConfirmSwitch { kind, custom } => {
                 if yes {
-                    self.apply_session(kind);
+                    self.switch_session(kind, custom);
                 }
                 None
             }
@@ -555,7 +607,7 @@ impl App {
                             values: self.config.custom,
                         })
                     }
-                    KeyCode::Enter => self.choose_session(kind),
+                    KeyCode::Enter => self.choose_session(kind, None),
                     // Recién abierto, `q` sale del programa; si no, solo cierra.
                     KeyCode::Char('q') if initial => {
                         self.quit = true;
@@ -588,15 +640,7 @@ impl App {
                         bump(&mut values, field, step);
                         Some(Modal::EditCustom { field, values })
                     }
-                    KeyCode::Enter => {
-                        self.config.custom = values;
-                        if let Some(p) = &self.paths
-                            && let Err(e) = store::save_config(&p.config(), &self.config)
-                        {
-                            self.say(format!("no se pudo guardar: {e}"), Level::Err);
-                        }
-                        self.choose_session(SessionKind::Personalizado)
-                    }
+                    KeyCode::Enter => self.choose_session(SessionKind::Personalizado, Some(values)),
                     KeyCode::Esc => Some(Modal::Sessions {
                         idx: 3,
                         initial: false,
@@ -789,11 +833,58 @@ pub mod tests_support {
         a.on_key(key(KeyCode::Char('m')));
         a.on_key(key(KeyCode::Down));
         a.on_key(key(KeyCode::Enter));
-        assert_eq!(a.modal, Some(Modal::ConfirmSwitch(SessionKind::Deep)));
+        assert_eq!(
+            a.modal,
+            Some(Modal::ConfirmSwitch {
+                kind: SessionKind::Deep,
+                custom: None
+            })
+        );
         assert_eq!(a.session, SessionKind::Clasico);
         a.on_key(key(KeyCode::Enter));
         assert_eq!(a.session, SessionKind::Deep);
         assert!(!a.timer.in_progress(a.now));
+    }
+
+    #[test]
+    fn cancelar_cambio_no_guarda_personalizado() {
+        let (mut a, c) = app_with(Some(SessionKind::Clasico), empty());
+        let antes = a.config.custom;
+        a.on_key(key(KeyCode::Char(' ')));
+        c.advance(Duration::from_secs(60));
+        a.on_key(key(KeyCode::Char('m')));
+        for _ in 0..3 {
+            a.on_key(key(KeyCode::Down));
+        }
+        a.on_key(key(KeyCode::Char('e')));
+        a.on_key(key(KeyCode::Left));
+        a.on_key(key(KeyCode::Enter));
+        assert!(matches!(a.modal, Some(Modal::ConfirmSwitch { .. })));
+        a.on_key(key(KeyCode::Char('n')));
+        assert_eq!(a.config.custom, antes, "cancelado: config sin tocar");
+        assert_eq!(a.session, SessionKind::Clasico);
+    }
+
+    #[test]
+    fn q_recien_iniciado_pide_confirmar() {
+        let (mut a, _c) = app_with(Some(SessionKind::Clasico), empty());
+        a.on_key(key(KeyCode::Char(' ')));
+        a.on_key(key(KeyCode::Char('q')));
+        assert!(!a.quit);
+        assert_eq!(a.modal, Some(Modal::ConfirmQuit));
+    }
+
+    #[test]
+    fn rafaga_de_avisos_no_hace_cola() {
+        let mut a = app(Some(SessionKind::Clasico));
+        for i in 0..20 {
+            a.say(format!("aviso {i}"), Level::Info);
+        }
+        assert_eq!(a.toasts.len(), TOAST_MAX);
+        assert_eq!(a.toast().map(|t| t.msg.as_str()), Some("aviso 0"));
+        assert_eq!(a.toasts.back().map(|t| t.msg.as_str()), Some("aviso 19"));
+        a.say("aviso 19", Level::Info);
+        assert_eq!(a.toasts.len(), TOAST_MAX, "repetido seguido no se encola");
     }
 
     #[test]
@@ -950,7 +1041,7 @@ pub mod tests_support {
         assert_eq!(a.log_scroll, 2);
         // Las teclas globales siguen funcionando con el Log enfocado.
         a.on_key(key(KeyCode::Char('?')));
-        assert_eq!(a.modal, Some(Modal::Help));
+        assert_eq!(a.modal, Some(Modal::Help(0)));
     }
 
     #[test]

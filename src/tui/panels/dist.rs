@@ -3,7 +3,7 @@
 use jiff::Span as JSpan;
 use ratatui::{
     Frame,
-    layout::{Margin, Rect},
+    layout::Rect,
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -20,8 +20,8 @@ use crate::{
 
 pub fn title(app: &App) -> String {
     match app.dist_range {
-        DistRange::Today => "Distribución · hoy".to_owned(),
-        DistRange::Week => "Distribución · 7 días".to_owned(),
+        DistRange::Today => "distribución · hoy".to_owned(),
+        DistRange::Week => "distribución · 7 días".to_owned(),
     }
 }
 
@@ -35,7 +35,7 @@ pub fn shares(app: &App) -> Vec<Share> {
 }
 
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
-    let inner = area.inner(Margin::new(1, 0));
+    let inner = crate::tui::ui::pad(area);
     if inner.width == 0 || inner.height == 0 {
         return;
     }

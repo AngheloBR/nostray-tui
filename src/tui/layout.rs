@@ -40,12 +40,12 @@ impl PanelId {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Timer => "Timer",
-            Self::Today => "Hoy",
-            Self::Dist => "Distribución",
-            Self::Activity => "Racha y actividad",
-            Self::Tasks => "Tareas",
-            Self::Log => "Log",
+            Self::Timer => "timer",
+            Self::Today => "hoy",
+            Self::Dist => "distribución",
+            Self::Activity => "racha y actividad",
+            Self::Tasks => "tareas",
+            Self::Log => "log",
         }
     }
 
@@ -65,7 +65,7 @@ impl PanelId {
     fn pref_h(self) -> u16 {
         match self {
             Self::Timer => 10,
-            Self::Today => 4,
+            Self::Today => 5,
             Self::Dist => 7,
             Self::Activity => 12,
             Self::Tasks => 8,
@@ -118,8 +118,17 @@ pub fn compute(area: Rect, pick: &dyn Fn(&[PanelId]) -> PanelId) -> Option<Scree
 
     let two_cols = area.width >= MEDIUM_W && h >= 18;
     if !two_cols {
-        let timer_h = if h >= 14 { 10 } else { 5 };
-        let today_h = if h >= timer_h + 4 { 4 } else { 3 };
+        // El Timer gana la línea de detalle (11) solo si queda sitio para un hueco más.
+        let timer_h = match h {
+            21.. => 11,
+            14.. => 10,
+            _ => 5,
+        };
+        let today_h = match h.saturating_sub(timer_h) {
+            10.. => 5,
+            4..=9 => 4,
+            _ => 3,
+        };
         let panels = column(
             body,
             &[(PanelId::Timer, timer_h), (PanelId::Today, today_h)],
@@ -129,6 +138,7 @@ pub fn compute(area: Rect, pick: &dyn Fn(&[PanelId]) -> PanelId) -> Option<Scree
                 PanelId::Tasks,
                 PanelId::Log,
             ],
+            None,
             pick,
         );
         return Some(Screen {
@@ -144,18 +154,25 @@ pub fn compute(area: Rect, pick: &dyn Fn(&[PanelId]) -> PanelId) -> Option<Scree
     let left_w = if wide { WIDE_LEFT } else { area.width / 2 };
     let left = Rect::new(body.x, body.y, left_w, h);
     let right = Rect::new(body.x + left_w, body.y, body.width - left_w, h);
-    let big = wide && h >= 15 + 4 + ROT_MIN;
-    let timer_h = if big { 15 } else { 10 };
+    let big = wide && h >= 16 + 5 + ROT_MIN;
+    let timer_h = match (big, h) {
+        (true, _) => 16,
+        (false, 23..) => 11,
+        _ => 10,
+    };
+    // A la izquierda, lo que sobre tras Distribución lo absorbe el Timer.
     let mut panels = column(
         left,
-        &[(PanelId::Timer, timer_h), (PanelId::Today, 4)],
+        &[(PanelId::Timer, timer_h), (PanelId::Today, 5)],
         &[PanelId::Dist],
+        Some(PanelId::Timer),
         pick,
     );
     panels.extend(column(
         right,
         &[],
         &[PanelId::Activity, PanelId::Tasks, PanelId::Log],
+        None,
         pick,
     ));
     Some(Screen {
@@ -168,10 +185,12 @@ pub fn compute(area: Rect, pick: &dyn Fn(&[PanelId]) -> PanelId) -> Option<Scree
 }
 
 /// Apila `fixed` arriba; luego tantos `flex` como quepan y el resto en un hueco rotatorio.
+/// Si todo cabe, el sobrante va a `grow` (o al último panel si no se indica).
 fn column(
     area: Rect,
     fixed: &[(PanelId, u16)],
     flex: &[PanelId],
+    grow: Option<PanelId>,
     pick: &dyn Fn(&[PanelId]) -> PanelId,
 ) -> Vec<Placed> {
     let mut out = Vec::new();
@@ -210,7 +229,7 @@ fn column(
     };
 
     for (i, &id) in stacked.iter().enumerate() {
-        let last = i + 1 == stacked.len() && rotating.is_empty();
+        let last = i + 1 == stacked.len() && rotating.is_empty() && grow.is_none();
         let h = if last { rem(y) } else { id.pref_h() };
         out.push(Placed {
             id,
@@ -218,6 +237,18 @@ fn column(
             rot: None,
         });
         y += h;
+    }
+
+    if rotating.is_empty()
+        && let Some(g) = grow
+        && let Some(gi) = out.iter().position(|p| p.id == g)
+    {
+        let extra = rem(y);
+        out[gi].rect.height += extra;
+        for p in &mut out[gi + 1..] {
+            p.rect.y += extra;
+        }
+        return out;
     }
 
     if !rotating.is_empty() && rem(y) >= 3 {
@@ -284,7 +315,7 @@ mod tests {
         assert_eq!(s.mode, Mode::Narrow);
         assert_eq!(ids(&s), [PanelId::Timer, PanelId::Today, PanelId::Dist]);
         assert_eq!(s.panels[2].rot, Some((1, 4)));
-        assert_eq!(s.panels[0].rect.height, 10);
+        assert_eq!(s.panels[0].rect.height, 11);
         sane(&s, 80, 24);
     }
 

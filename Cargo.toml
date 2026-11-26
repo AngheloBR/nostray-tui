@@ -32,3 +32,41 @@ serde_json = "1.0.154"
 signal-hook = "0.4.6"
 thiserror = "2.0.21"
 toml = "1.2.3"
+
+# ── Paquetes .deb / .rpm (los genera el workflow de release) ─────────────────
+# El binario es estático (musl): no depende de ninguna librería del sistema.
+# `notify-send` es opcional (avisos de escritorio): se recomienda, no se exige.
+
+[package.metadata.deb]
+name = "nostray-tui"
+maintainer = "AngheloBR <182365321+AngheloBR@users.noreply.github.com>"
+copyright = "2026, AngheloBR"
+section = "utils"
+priority = "optional"
+recommends = "libnotify-bin"
+extended-description = """\
+Temporizador Pomodoro para la terminal: sesiones (Clásico 25/5, Deep work, Flow \
+y personalizada), categorías de foco, meta diaria, distribución del tiempo, racha \
+y heatmap de actividad estilo GitHub, tareas y log. Sin red ni servicios."""
+assets = [
+    ["target/release/nostray", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/nostray-tui/README.md", "644"],
+    ["README.es.md", "usr/share/doc/nostray-tui/README.es.md", "644"],
+    ["LICENSE-MIT", "usr/share/doc/nostray-tui/", "644"],
+    ["LICENSE-APACHE", "usr/share/doc/nostray-tui/", "644"],
+]
+
+[package.metadata.generate-rpm]
+auto-req = "no"
+name = "nostray-tui"
+summary = "Pomodoro TUI for focused work"
+assets = [
+    { source = "target/release/nostray", dest = "/usr/bin/nostray", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/nostray-tui/README.md", mode = "644", doc = true },
+    { source = "README.es.md", dest = "/usr/share/doc/nostray-tui/README.es.md", mode = "644", doc = true },
+    { source = "LICENSE-MIT", dest = "/usr/share/licenses/nostray-tui/LICENSE-MIT", mode = "644", doc = true },
+    { source = "LICENSE-APACHE", dest = "/usr/share/licenses/nostray-tui/LICENSE-APACHE", mode = "644", doc = true },
+]
+
+[package.metadata.generate-rpm.recommends]
+libnotify = "*"

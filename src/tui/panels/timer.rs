@@ -81,6 +81,82 @@ fn context_spans(app: &App, max: usize) -> Vec<Span<'static>> {
     spans
 }
 
+/// «25 min», «1 h 30 min».
+pub fn human(d: Duration) -> String {
+    let m = d.as_secs() / 60;
+    match (m / 60, m % 60) {
+        (0, m) => format!("{m} min"),
+        (h, 0) => format!("{h} h"),
+        (h, m) => format!("{h} h {m} min"),
+    }
+}
+
+fn phase_name(p: Phase) -> &'static str {
+    match p {
+        Phase::Focus => "foco",
+        Phase::ShortBreak => "descanso",
+        Phase::LongBreak => "descanso largo",
+    }
+}
+
+/// Puntos de la serie hasta el descanso largo: ● hechos, ◉ el actual, ○ pendientes.
+fn cycle_dots(app: &App) -> Vec<Span<'static>> {
+    let Some((i, n)) = app.timer.cycle() else {
+        return Vec::new();
+    };
+    let in_focus = app.timer.phase() == Phase::Focus;
+    let done = if in_focus { i - 1 } else { i };
+    let mut v = Vec::new();
+    for k in 1..=n {
+        let t = f64::from(k - 1) / f64::from(n.max(2) - 1);
+        let (c, style) = if k <= done {
+            ("●", fg(accent(t)))
+        } else if k == i && in_focus {
+            ("◉", bold(TEXT))
+        } else {
+            ("○", fg(FAINT))
+        };
+        if k > 1 {
+            v.push(Span::raw(" "));
+        }
+        v.push(Span::styled(c, style));
+    }
+    v
+}
+
+/// Línea de detalle: serie, hora de fin (o duración) y lo que viene después.
+fn detail_spans(app: &App, max: usize) -> Vec<Span<'static>> {
+    let mut v = cycle_dots(app);
+    let sep = |v: &mut Vec<Span<'static>>| {
+        if !v.is_empty() {
+            v.push(Span::styled("   ", fg(FAINT)));
+        }
+    };
+    sep(&mut v);
+    match app.ends_at() {
+        Some(t) => {
+            v.push(Span::styled("termina ", fg(DIM)));
+            v.push(Span::styled(t, bold(TEXT)));
+        }
+        None => {
+            v.push(Span::styled(human(app.timer.planned()), bold(TEXT)));
+            v.push(Span::styled(
+                format!(" de {}", phase_name(app.timer.phase())),
+                fg(DIM),
+            ));
+        }
+    }
+    let (next, len) = app.timer.next_phase();
+    let after = vec![
+        Span::styled("  ·  después ", fg(DIM)),
+        Span::styled(format!("{} {}", phase_name(next), human(len)), fg(MUTED)),
+    ];
+    if width(&v) + width(&after) <= max {
+        v.extend(after);
+    }
+    v
+}
+
 fn bar(app: &App, w: usize) -> Line<'static> {
     let frac = app.timer.progress(app.now);
     let label = format!(" {:>3}%", (frac * 100.0).floor() as u32);
@@ -115,11 +191,22 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, big: bool) {
     let rows_h = u16::try_from(want.rows()).unwrap_or(5);
 
     if inner.height >= rows_h + 3 {
-        let [digits_r, _, info, bar_r] = Layout::vertical([
-            Constraint::Length(rows_h),
+        // Con sitio: dígitos, hueco, estado, detalle y barra, centrados en vertical.
+        // Sin sitio para el detalle, se omite.
+        let with_detail = inner.height >= rows_h + 4;
+        // Hueco extra (si el panel creció): mitad arriba, mitad abajo; si sobra
+        // al menos una línea, también separa la barra del detalle.
+        let base = rows_h + 3 + u16::from(with_detail);
+        let gap_bar = u16::from(inner.height > base + 2);
+        let [_, digits_r, _, info, detail_r, _, bar_r, _] = Layout::vertical([
             Constraint::Fill(1),
+            Constraint::Length(rows_h),
             Constraint::Length(1),
             Constraint::Length(1),
+            Constraint::Length(u16::from(with_detail)),
+            Constraint::Length(gap_bar),
+            Constraint::Length(1),
+            Constraint::Fill(1),
         ])
         .areas(inner);
         let scale = [want, Scale::WIDE, Scale::SMALL]
@@ -149,6 +236,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, big: bool) {
             Paragraph::new(Line::from(context_spans(app, w))).alignment(Alignment::Center),
             info,
         );
+        if with_detail {
+            f.render_widget(
+                Paragraph::new(Line::from(detail_spans(app, w))).alignment(Alignment::Center),
+                detail_r,
+            );
+        }
         f.render_widget(Paragraph::new(bar(app, w)), bar_r);
     } else {
         // Compacto: reloj en texto + estado, contexto y barra.
@@ -161,6 +254,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, big: bool) {
         let rows = Layout::vertical([Constraint::Length(1); 3]).split(inner);
         f.render_widget(Paragraph::new(Line::from(first)), rows[0]);
         if let Some(r) = rows.get(2).filter(|_| inner.height >= 3) {
+            f.render_widget(Paragraph::new(Line::from(detail_spans(app, w))), rows[1]);
             f.render_widget(Paragraph::new(bar(app, w)), *r);
         } else if let Some(r) = rows.get(1).filter(|_| inner.height >= 2) {
             f.render_widget(Paragraph::new(bar(app, w)), *r);

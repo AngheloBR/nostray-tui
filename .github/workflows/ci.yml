@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  # Binario estático: debe compilar con musl y no depender de ninguna librería.
+  musl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --locked --release --target x86_64-unknown-linux-musl
+      - name: Comprobar que es estático
+        run: |
+          bin=target/x86_64-unknown-linux-musl/release/nostray
+          file "$bin"
+          ldd "$bin" || true
+          file "$bin" | grep -qE "static(-pie)? linked|statically linked"
+          "$bin" --version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nostray-x86_64-unknown-linux-musl
+          path: target/x86_64-unknown-linux-musl/release/nostray
