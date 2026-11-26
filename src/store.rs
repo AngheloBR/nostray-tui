@@ -3,6 +3,7 @@
 //! - Datos: `$XDG_DATA_HOME/<APP_NAME>/{history,tasks}.json`
 //! - Config: `$XDG_CONFIG_HOME/<APP_NAME>/config.toml`
 //! - Un archivo ilegible NO se borra: se renombra a `.bak` (o `.bak.N`) y se arranca limpio.
+//! - En [`Mode::ReadOnly`] (p. ej. `stats`) nunca se crea, renombra ni escribe nada.
 
 use std::{
     fs, io,
@@ -77,11 +78,20 @@ pub struct Loaded {
     pub notices: Vec<String>,
 }
 
-pub fn load_all(paths: &Paths) -> Result<Loaded, StoreError> {
+/// Cómo trata la carga los archivos ausentes o ilegibles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// TUI: crea `config.toml` si falta y mueve lo ilegible a `.bak`.
+    ReadWrite,
+    /// Consultas (`stats`): usa valores por defecto sin tocar ningún archivo.
+    ReadOnly,
+}
+
+pub fn load_all(paths: &Paths, mode: Mode) -> Result<Loaded, StoreError> {
     let mut notices = Vec::new();
-    let history = load_json::<History>(&paths.history(), |h| h.version, &mut notices)?;
-    let tasks = load_json::<TaskList>(&paths.tasks(), |t| t.version, &mut notices)?;
-    let config = load_config(&paths.config(), &mut notices)?;
+    let history = load_json::<History>(&paths.history(), |h| h.version, mode, &mut notices)?;
+    let tasks = load_json::<TaskList>(&paths.tasks(), |t| t.version, mode, &mut notices)?;
+    let config = load_config(&paths.config(), mode, &mut notices)?;
     Ok(Loaded {
         history,
         tasks,
@@ -90,10 +100,12 @@ pub fn load_all(paths: &Paths) -> Result<Loaded, StoreError> {
     })
 }
 
-/// Lee un JSON. Ausente → valor por defecto. Ilegible o de versión desconocida → `.bak`.
+/// Lee un JSON. Ausente → valor por defecto. Ilegible o de versión desconocida → `.bak`
+/// (en [`Mode::ReadOnly`] solo se avisa y se usa el valor por defecto).
 pub fn load_json<T: DeserializeOwned + Default>(
     path: &Path,
     version: impl Fn(&T) -> u32,
+    mode: Mode,
     notices: &mut Vec<String>,
 ) -> Result<T, StoreError> {
     let Some(text) = read_optional(path)? else {
@@ -104,6 +116,13 @@ pub fn load_json<T: DeserializeOwned + Default>(
         Ok(v) => format!("versión {} no soportada", version(&v)),
         Err(e) => e.to_string(),
     };
+    if mode == Mode::ReadOnly {
+        notices.push(format!(
+            "{} ilegible ({reason}); lo ignoro sin modificarlo",
+            file_name(path)
+        ));
+        return Ok(T::default());
+    }
     let bak = backup(path)?;
     notices.push(format!(
         "{} ilegible ({reason}); guardado como {} y empiezo vacío",
@@ -115,13 +134,28 @@ pub fn load_json<T: DeserializeOwned + Default>(
 
 /// Lee la configuración. Ausente → la crea con comentarios. Ilegible → `.bak`.
 /// Valores fuera de rango se corrigen en memoria sin tocar el archivo.
-pub fn load_config(path: &Path, notices: &mut Vec<String>) -> Result<Config, StoreError> {
+/// En [`Mode::ReadOnly`] no crea ni renombra nada: usa los valores por defecto.
+pub fn load_config(
+    path: &Path,
+    mode: Mode,
+    notices: &mut Vec<String>,
+) -> Result<Config, StoreError> {
     let Some(text) = read_optional(path)? else {
-        write_atomic(path, default_config_toml().as_bytes())?;
+        if mode == Mode::ReadWrite {
+            write_atomic(path, default_config_toml().as_bytes())?;
+        }
         return Ok(Config::default());
     };
     let cfg = match toml::from_str::<Config>(&text) {
         Ok(c) => c,
+        Err(e) if mode == Mode::ReadOnly => {
+            notices.push(format!(
+                "{} ilegible ({}); uso valores por defecto sin modificarlo",
+                file_name(path),
+                e.message()
+            ));
+            return Ok(Config::default());
+        }
         Err(e) => {
             let bak = backup(path)?;
             notices.push(format!(
@@ -294,7 +328,7 @@ mod tests {
     fn arranque_vacio_crea_solo_config() {
         let t = TestDir::new("vacio");
         let p = paths(&t);
-        let l = load_all(&p);
+        let l = load_all(&p, Mode::ReadWrite);
         let l = l.as_ref().ok();
         assert_eq!(l.map(|l| l.history.cycles.len()), Some(0));
         assert_eq!(l.map(|l| l.tasks.tasks.len()), Some(0));
@@ -320,7 +354,7 @@ mod tests {
         };
         assert!(save_config(&p.config(), &cfg).is_ok());
 
-        let l = load_all(&p);
+        let l = load_all(&p, Mode::ReadWrite);
         let l = l.as_ref().ok();
         assert_eq!(l.map(|l| &l.tasks), Some(&tasks));
         assert_eq!(l.map(|l| &l.config), Some(&cfg));
@@ -334,7 +368,7 @@ mod tests {
         let _ = fs::create_dir_all(t.path().join("data"));
         let _ = fs::write(p.history(), "{ esto no es json");
         let mut notes = Vec::new();
-        let h = load_json::<History>(&p.history(), |h| h.version, &mut notes);
+        let h = load_json::<History>(&p.history(), |h| h.version, Mode::ReadWrite, &mut notes);
         assert_eq!(h.ok(), Some(History::default()));
         assert!(!p.history().exists());
         let bak = with_suffix(&p.history(), ".bak");
@@ -347,7 +381,7 @@ mod tests {
 
         // Segundo corrupto: no pisa el primer .bak.
         let _ = fs::write(p.history(), "[]");
-        let _ = load_json::<History>(&p.history(), |h| h.version, &mut notes);
+        let _ = load_json::<History>(&p.history(), |h| h.version, Mode::ReadWrite, &mut notes);
         assert!(bak.exists());
         assert!(with_suffix(&p.history(), ".bak.1").exists());
     }
@@ -362,7 +396,7 @@ mod tests {
             r#"{"version":2,"next_id":1,"active":null,"tasks":[]}"#,
         );
         let mut notes = Vec::new();
-        let r = load_json::<TaskList>(&p.tasks(), |t| t.version, &mut notes);
+        let r = load_json::<TaskList>(&p.tasks(), |t| t.version, Mode::ReadWrite, &mut notes);
         assert_eq!(r.ok(), Some(TaskList::default()));
         assert!(with_suffix(&p.tasks(), ".bak").exists());
         assert!(notes[0].contains("versión 2"), "{notes:?}");
@@ -375,7 +409,7 @@ mod tests {
         let _ = fs::create_dir_all(t.path().join("config"));
         let _ = fs::write(p.config(), "daily_goal = = 3");
         let mut notes = Vec::new();
-        let c = load_config(&p.config(), &mut notes);
+        let c = load_config(&p.config(), Mode::ReadWrite, &mut notes);
         assert_eq!(c.ok(), Some(Config::default()));
         assert_eq!(
             fs::read_to_string(with_suffix(&p.config(), ".bak"))
@@ -395,7 +429,7 @@ mod tests {
         let original = "daily_goal = 99\n";
         let _ = fs::write(p.config(), original);
         let mut notes = Vec::new();
-        let c = load_config(&p.config(), &mut notes);
+        let c = load_config(&p.config(), Mode::ReadWrite, &mut notes);
         assert_eq!(c.ok().map(|c| c.daily_goal), Some(8));
         assert_eq!(
             fs::read_to_string(p.config()).ok().as_deref(),
@@ -425,7 +459,7 @@ mod tests {
         assert!(save_json(&f, &sample_tasks()).is_ok());
         let _ = fs::write(with_suffix(&f, ".tmp"), "{ a medias");
         let mut notes = Vec::new();
-        let r = load_json::<TaskList>(&f, |t| t.version, &mut notes);
+        let r = load_json::<TaskList>(&f, |t| t.version, Mode::ReadWrite, &mut notes);
         assert_eq!(r.ok(), Some(sample_tasks()));
         assert!(notes.is_empty());
         assert!(
@@ -442,8 +476,45 @@ mod tests {
         let f = t.path().join("history.json");
         let _ = fs::create_dir_all(&f);
         let mut notes = Vec::new();
-        let r = load_json::<History>(&f, |h| h.version, &mut notes);
+        let r = load_json::<History>(&f, |h| h.version, Mode::ReadWrite, &mut notes);
         assert!(r.is_err());
         assert!(!with_suffix(&f, ".bak").exists());
+    }
+
+    #[test]
+    fn solo_lectura_sin_archivos_no_crea_nada() {
+        let t = TestDir::new("ro-vacio");
+        let p = paths(&t);
+        let l = load_all(&p, Mode::ReadOnly);
+        let l = l.as_ref().ok();
+        assert_eq!(l.map(|l| &l.config), Some(&Config::default()));
+        assert_eq!(l.map(|l| l.notices.len()), Some(0));
+        assert!(!t.path().join("data").exists());
+        assert!(!t.path().join("config").exists());
+    }
+
+    #[test]
+    fn solo_lectura_con_corruptos_avisa_sin_renombrar() {
+        let t = TestDir::new("ro-corrupto");
+        let p = paths(&t);
+        let _ = fs::create_dir_all(t.path().join("data"));
+        let _ = fs::create_dir_all(t.path().join("config"));
+        let _ = fs::write(p.history(), "{ esto no es json");
+        let _ = fs::write(p.config(), "daily_goal = = 3");
+        let l = load_all(&p, Mode::ReadOnly);
+        let l = l.as_ref().ok();
+        assert_eq!(l.map(|l| &l.history), Some(&History::default()));
+        assert_eq!(l.map(|l| &l.config), Some(&Config::default()));
+        assert_eq!(l.map(|l| l.notices.len()), Some(2));
+        assert_eq!(
+            fs::read_to_string(p.history()).ok().as_deref(),
+            Some("{ esto no es json")
+        );
+        assert_eq!(
+            fs::read_to_string(p.config()).ok().as_deref(),
+            Some("daily_goal = = 3")
+        );
+        assert!(!with_suffix(&p.history(), ".bak").exists());
+        assert!(!with_suffix(&p.config(), ".bak").exists());
     }
 }

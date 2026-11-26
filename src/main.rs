@@ -26,7 +26,7 @@ pub const APP_NAME: &str = "nostray";
 fn main() -> anyhow::Result<ExitCode> {
     let cli = Cli::parse();
     let paths = Paths::from_env()?;
-    let loaded = store::load_all(&paths)?;
+    let loaded = store::load_all(&paths, store::Mode::ReadWrite)?;
 
     match cli.command {
         Some(Cmd::Stats) => {
