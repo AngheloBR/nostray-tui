@@ -1,3 +1,6 @@
 /target
 **/*.rs.bk
 *.tmp
+
+# Artefactos locales de herramientas (pueden contener información confidencial)
+/vault/
